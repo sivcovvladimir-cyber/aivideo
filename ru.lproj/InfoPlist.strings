@@ -1,0 +1,8 @@
+/* Photo Library Access */
+"NSPhotoLibraryUsageDescription" = "Приложению нужен доступ к фото, чтобы сохранять и делиться сгенерированными видео и изображениями.";
+
+/* Photo Library Add Access */
+"NSPhotoLibraryAddUsageDescription" = "Приложению нужен доступ, чтобы сохранять AI-видео и фото в вашу медиатеку.";
+
+/* Camera Access */
+"NSCameraUsageDescription" = "Приложению нужен доступ к камере, чтобы снять фото для эффектов и генерации."; 

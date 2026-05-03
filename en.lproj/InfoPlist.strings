@@ -1,0 +1,8 @@
+/* Photo Library Access */
+"NSPhotoLibraryUsageDescription" = "This app needs access to your photo library to save and share your AI-generated videos and images.";
+
+/* Photo Library Add Access */
+"NSPhotoLibraryAddUsageDescription" = "This app needs access to save your AI-generated videos and images to your photo library.";
+
+/* Camera Access */
+"NSCameraUsageDescription" = "This app needs camera access to capture photos for effects and generation."; 

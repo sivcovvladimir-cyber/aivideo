@@ -1,0 +1,31 @@
+{
+  "planIds": [
+    "premium_weekly",
+    "premium_annual"
+  ],
+  "purchasePlanIds": [
+    "purchase_250",
+    "purchase_1000",
+    "purchase_5000"
+  ],
+  "generationLimits": {
+    "premium_weekly": 250,
+    "premium_annual": 2500,
+    "purchase_250": 250,
+    "purchase_1000": 1000,
+    "purchase_5000": 5000
+  },
+  "adapty": {
+    "placementId": "placement",
+    "paywallId": "paywall"
+  },
+  "logic": {
+    "showPaywallAfterOnboarding": false,
+    "starting_token_balance": 30,
+    "daily_token_allowance": 10,
+    "tokens_per_effect_generation": 25,
+    "prompt_video_tokens_per_second": 5,
+    "prompt_video_audio_addon_tokens": 2,
+    "prompt_photo_generation_tokens": 1
+  }
+}

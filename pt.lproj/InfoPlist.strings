@@ -1,0 +1,8 @@
+/* Photo Library Access */
+"NSPhotoLibraryUsageDescription" = "O app precisa de acesso à sua biblioteca de fotos para salvar e compartilhar vídeos e imagens gerados por IA.";
+
+/* Photo Library Add Access */
+"NSPhotoLibraryAddUsageDescription" = "O app precisa de acesso para salvar vídeos e imagens gerados por IA na sua biblioteca de fotos.";
+
+/* Camera Access */
+"NSCameraUsageDescription" = "O app precisa de acesso à câmera para tirar fotos para efeitos e geração.";

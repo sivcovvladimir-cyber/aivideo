@@ -1,0 +1,148 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "B2C3D4E5-F6A7-8901-BCDE-F123456789AB",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "E0000001-0000-4000-8000-000000000001",
+      "localizations" : [
+        {
+          "description" : "250 tokens (local StoreKit test)",
+          "displayName" : "250 Tokens",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "purchase_250",
+      "referenceName" : "purchase_250",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "16.99",
+      "familyShareable" : false,
+      "internalID" : "E0000002-0000-4000-8000-000000000002",
+      "localizations" : [
+        {
+          "description" : "1000 tokens (local StoreKit test)",
+          "displayName" : "1000 Tokens",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "purchase_1000",
+      "referenceName" : "purchase_1000",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "69.99",
+      "familyShareable" : false,
+      "internalID" : "E0000003-0000-4000-8000-000000000003",
+      "localizations" : [
+        {
+          "description" : "5000 tokens (local StoreKit test)",
+          "displayName" : "5000 Tokens",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "purchase_5000",
+      "referenceName" : "purchase_5000",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "C0FFEE01-0000-4000-8000-000000000001",
+      "localizations" : [
+
+      ],
+      "name" : "Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "S0000001-0000-4000-8000-000000000001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Weekly subscription — 250 tokens / period (local test)",
+              "displayName" : "Premium Weekly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "premium_weekly",
+          "recurringSubscriptionPeriod" : "P1W",
+          "referenceName" : "premium_weekly",
+          "subscriptionGroupID" : "C0FFEE01-0000-4000-8000-000000000001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "49.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "S0000002-0000-4000-8000-000000000002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Annual subscription — 2500 tokens / period (local test)",
+              "displayName" : "Premium Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "premium_annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "premium_annual",
+          "subscriptionGroupID" : "C0FFEE01-0000-4000-8000-000000000001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

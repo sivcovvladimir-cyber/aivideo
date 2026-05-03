@@ -1,0 +1,8 @@
+/* Photo Library Access */
+"NSPhotoLibraryUsageDescription" = "Diese App benötigt Zugriff auf deine Fotomediathek, um KI-generierte Videos und Bilder zu speichern und zu teilen.";
+
+/* Photo Library Add Access */
+"NSPhotoLibraryAddUsageDescription" = "Diese App benötigt Zugriff, um KI-generierte Videos und Bilder in deiner Fotomediathek zu speichern.";
+
+/* Camera Access */
+"NSCameraUsageDescription" = "Diese App benötigt Kamerazugriff, um Fotos für Effekte und Generierung aufzunehmen.";
