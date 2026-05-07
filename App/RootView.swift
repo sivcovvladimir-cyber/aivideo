@@ -90,6 +90,7 @@ private struct GenerationSuccessDetailOverlay: View {
             isEffectReferencePickMode: false,
             onDismiss: {
                 appState.dismissGenerationSuccessDetail()
+                appState.handleMediaDetailDismissed()
             },
             onEffectReferencePicked: nil,
             showDeleteInTopBar: true,

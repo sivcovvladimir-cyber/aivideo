@@ -33,6 +33,18 @@ struct EffectDetailView: View {
         carouselPresets.map { String($0.id) }.joined(separator: "|")
     }
 
+    private var detailPreviewWarmupIdentity: String {
+        let phase = scenePhase == .active ? "active" : "inactive"
+        let selectedId = preset.map { String($0.id) } ?? "nil"
+        let selectedURL = preset?.previewVideoURL?.absoluteString ?? "nil"
+        return [phase, selectedId, selectedURL, carouselIdentity].joined(separator: "|")
+    }
+
+    private var detailSessionID: String {
+        let selectedId = preset.map { String($0.id) } ?? "nil"
+        return "effect-detail|\(selectedId)|\(carouselIdentity)"
+    }
+
     private var cost: Int {
         GenerationCostCalculator().effectGenerationCost(presetTokenCost: preset?.tokenCost)
     }
@@ -99,7 +111,7 @@ struct EffectDetailView: View {
                         ),
                         backgroundColor: AppTheme.Colors.background,
                         onBackTap: {
-                            appState.dismissEffectDetail()
+                            Task { await appState.dismissEffectDetail() }
                         }
                     )
 
@@ -115,8 +127,12 @@ struct EffectDetailView: View {
                                 EffectDetailPresetCarousel(
                                     presets: carouselPresets,
                                     selectionId: preset.id,
-                                    card: { p, isCurrentPage in
-                                        previewCard(preset: p, allowVideoPlayback: isCurrentPage)
+                                    card: { p, isCurrentPage, shouldPreloadMotion in
+                                        previewCard(
+                                            preset: p,
+                                            allowVideoPlayback: isCurrentPage,
+                                            preloadMotionWhenHidden: shouldPreloadMotion
+                                        )
                                     },
                                     onCommit: { newPreset in
                                         if appState.selectedEffectPreset?.id != newPreset.id {
@@ -126,7 +142,11 @@ struct EffectDetailView: View {
                                 )
                                 .id(carouselIdentity)
                             } else {
-                                previewCard(preset: preset, allowVideoPlayback: true)
+                                previewCard(
+                                    preset: preset,
+                                    allowVideoPlayback: true,
+                                    preloadMotionWhenHidden: false
+                                )
                             }
                         }
                         .frame(width: availW, height: availH)
@@ -147,9 +167,16 @@ struct EffectDetailView: View {
             guard let newItem else { return }
             Task { await loadSelectedPhoto(newItem) }
         }
+        .task(id: detailPreviewWarmupIdentity) {
+            await prewarmDetailPreviewVideosIfNeeded()
+        }
     }
 
-    private func previewCard(preset: EffectPreset, allowVideoPlayback: Bool) -> some View {
+    private func previewCard(
+        preset: EffectPreset,
+        allowVideoPlayback: Bool,
+        preloadMotionWhenHidden: Bool
+    ) -> some View {
         GeometryReader { proxy in
             let w = proxy.size.width
             let h = proxy.size.height
@@ -163,7 +190,14 @@ struct EffectDetailView: View {
                     image: preset.bundledPreviewUIImage(),
                     motionURL: preset.previewVideoURL?.absoluteString,
                     shouldPlayMotion: scenePhase == .active && allowVideoPlayback,
-                    debugLogTag: "[effects-preview]",
+                    preloadsMotionWhenHidden: scenePhase == .active && !allowVideoPlayback && preloadMotionWhenHidden,
+                    showsLoadingIndicator: false,
+                    // Если AV-motion уже в дисковом кэше, не показываем промежуточный постер: убираем визуальный «скачок» при листании detail.
+                    prefersMotionWhenCached: true,
+                    // На detail оставляем политику «loader -> video» для кэшированного AV независимо от каталожного флага.
+                    showsPosterBeforeMotion: false,
+                    motionPlaybackVolumeOverride: 0.07,
+                    debugLogTag: nil,
                     debugContext: "detail id=\(preset.id) slug=\(preset.slug) title='\(preset.title)'"
                 ) {
                     if preset.previewImageURL != nil {
@@ -171,7 +205,7 @@ struct EffectDetailView: View {
                             .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.contentCircularLoaderTint))
                     } else {
                         VStack(spacing: 10) {
-                            Image(systemName: "photo.on.rectangle.angled")
+                            Image(systemName: "safari")
                                 .font(.system(size: 36, weight: .regular))
                                 .foregroundColor(AppTheme.Colors.textSecondary)
                             Text("effect_detail_vertical_preview".localized)
@@ -270,7 +304,7 @@ struct EffectDetailView: View {
                 .foregroundColor(AppTheme.Colors.textPrimary)
 
             Button {
-                appState.dismissEffectDetail()
+                Task { await appState.dismissEffectDetail() }
             } label: {
                 Text("back_to_effects".localized)
                     .font(AppTheme.Typography.button)
@@ -306,6 +340,17 @@ struct EffectDetailView: View {
             appState.notificationManager.showError(error.localizedDescription)
         }
     }
+
+    /// На detail прогреваем текущий пресет и ближайших соседей карусели, чтобы свайп по пресетам переключался без «холодного» старта видео.
+    @MainActor
+    private func prewarmDetailPreviewVideosIfNeeded() async {
+        await EffectsMediaOrchestrator.shared.updateDetailSession(
+            sceneIsActive: scenePhase == .active,
+            detailSessionID: detailSessionID,
+            selectedPreset: preset,
+            carouselPresets: carouselPresets
+        )
+    }
 }
 
 // MARK: - Зацикленная горизонтальная карусель пресетов
@@ -315,8 +360,9 @@ struct EffectDetailView: View {
 private struct EffectDetailPresetCarousel<Card: View>: View {
     let presets: [EffectPreset]
     let selectionId: Int
-    /// Второй аргумент — страница совпадает с `pageIndex` (один активный плеер даже при дубликатах preset в кольце).
-    @ViewBuilder let card: (EffectPreset, Bool) -> Card
+    /// Аргументы card:
+    /// 1) preset, 2) это активная страница (играем video), 3) соседняя страница (держим player прогретым в paused).
+    @ViewBuilder let card: (EffectPreset, Bool, Bool) -> Card
     let onCommit: (EffectPreset) -> Void
 
     @State private var pageIndex: Int
@@ -335,7 +381,7 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
     init(
         presets: [EffectPreset],
         selectionId: Int,
-        @ViewBuilder card: @escaping (EffectPreset, Bool) -> Card,
+        @ViewBuilder card: @escaping (EffectPreset, Bool, Bool) -> Card,
         onCommit: @escaping (EffectPreset) -> Void
     ) {
         self.presets = presets
@@ -349,7 +395,7 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
     var body: some View {
         TabView(selection: $pageIndex) {
             ForEach(Array(extended.enumerated()), id: \.offset) { idx, preset in
-                card(preset, idx == pageIndex)
+                card(preset, idx == pageIndex, shouldPreloadMotion(forExtendedIndex: idx))
                     .padding(.horizontal, interCardGap / 2)
                     .clipped()
                     .contentShape(Rectangle())
@@ -372,6 +418,12 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
         .onChange(of: pageIndex) { _, newValue in
             commitVisiblePage(newValue)
         }
+    }
+
+    /// Прогреваем только ближайшие к активной странице карточки — это даёт мгновенный старт после свайпа и не раздувает число поднятых AVPlayer.
+    private func shouldPreloadMotion(forExtendedIndex idx: Int) -> Bool {
+        guard useLooping else { return false }
+        return abs(idx - pageIndex) == 1
     }
 
     private func syncFromSelection(animated: Bool) {

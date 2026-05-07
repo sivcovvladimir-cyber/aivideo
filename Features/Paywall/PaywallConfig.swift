@@ -19,15 +19,10 @@ private actor StoreKitSimulatorProductFetchGate {
 
 // MARK: - Adapty catalog (локальный JSON + override из remote)
 
-/// Один placement и один paywall в Adapty (без разбиения по tier). В JSON — `placementId` / `paywallId`; старый формат с `placements` / `paywalls` ещё декодируется.
+/// Один placement в Adapty (без разбиения по tier). Поддерживаем `placementId` и legacy-формат с `placements`.
 struct PaywallAdaptyCatalog: Equatable {
     let placementId: String?
-    let paywallId: String?
-
-    init(placementId: String?, paywallId: String?) {
-        self.placementId = placementId
-        self.paywallId = paywallId
-    }
+    init(placementId: String?) { self.placementId = placementId }
 
     /// Remote поверх bundled: непустые поля remote перекрывают base.
     static func mergedOverlay(remote: PaywallAdaptyCatalog?, base: PaywallAdaptyCatalog?) -> PaywallAdaptyCatalog? {
@@ -37,8 +32,7 @@ struct PaywallAdaptyCatalog: Equatable {
         case (nil, let b?): return b
         case (let r?, let b?):
             return PaywallAdaptyCatalog(
-                placementId: coalesceNonEmpty(r.placementId, b.placementId),
-                paywallId: coalesceNonEmpty(r.paywallId, b.paywallId)
+                placementId: coalesceNonEmpty(r.placementId, b.placementId)
             )
         }
     }
@@ -55,11 +49,8 @@ struct PaywallAdaptyCatalog: Equatable {
 extension PaywallAdaptyCatalog: Codable {
     private enum CodingKeys: String, CodingKey {
         case placementId
-        case paywallId
         case placement_id
-        case paywall_id
         case placements
-        case paywalls
     }
 
     init(from decoder: Decoder) throws {
@@ -71,19 +62,11 @@ extension PaywallAdaptyCatalog: Codable {
         } else {
             placementId = nil
         }
-        if let s = try Self.decodeTrimmedString(container: c, keys: [.paywallId, .paywall_id]) {
-            paywallId = s
-        } else if let map = try c.decodeIfPresent([String: String].self, forKey: .paywalls) {
-            paywallId = Self.firstValue(from: map, preferredTierKeys: ["standard", "proUpsell"])
-        } else {
-            paywallId = nil
-        }
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(placementId, forKey: .placementId)
-        try c.encodeIfPresent(paywallId, forKey: .paywallId)
     }
 
     private static func decodeTrimmedString(container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) throws -> String? {
@@ -105,77 +88,47 @@ extension PaywallAdaptyCatalog: Codable {
 // MARK: - Paywall Configuration Models
 
 struct PaywallConfig: Codable {
-    let title: String
-    let subtitle: String
-    let features: [String] // Могут быть ключами локализации или обычными строками
-    
     /// Порядок отображения подписок (vendorProductId). Как в конфиге — так и показываем.
     let planIds: [String]?
     /// Порядок отображения разовых пакетов (vendorProductId). Как в конфиге — так и показываем.
     let purchasePlanIds: [String]?
-    /// ID планов с триалом (из конфига; для совместимости с JSON).
+    /// ID планов с триалом (для совместимости со старыми payload).
     let trialsPlanIds: [String]?
-    
-    /// Лимиты генераций для всех продуктов (подписки и пакеты).
-    /// Ключ — `vendorProductId` (например, "premium_weekly", "purchases_10_generations").
-    /// Значение — количество генераций за период (для подписки) или размер пакета (для разовой покупки).
-    let generationLimits: [String: Int]?
-
-    /// Единственные `placementId` / `paywallId` в Adapty (см. `PaywallCacheManager.configuredAdaptyPlacementId()`).
+    /// Единственный `placementId` в Adapty.
     let adapty: PaywallAdaptyCatalog?
-    
-    let ui: UIConfig
+    /// Локальный первоисточник логики + overlay из Adapty.
     let logic: LogicConfig
-    
-    struct UIConfig: Codable {
-        let backgroundColor: String? // hex color
-        let primaryColor: String?
-        let accentColor: String?
-        let showMostPopularBadge: Bool
-        let carouselAutoScroll: Bool
-        let carouselInterval: Double
-        let showSkipButton: Bool
-        let skipButtonText: String?
-    }
-    
-    struct LogicConfig: Codable {
-        let defaultSelectedPlanIndex: Int
-        let showTrialFirst: Bool?
-        let highlightAnnual: Bool?
-        let showSavingsPercentage: Bool?
-        let showPrivacyLinks: Bool
-        /// Показывать ли витрину (Showcase) в основном UI; дефолт в `LogicConfig.getDefault()`, remote может переопределить.
-        let showcaseEnabled: Bool?
-        /// Кол-во бесплатных генераций (remote override). Nil → используем хардкод в AppState
-        let freeGenerationsLimit: Int?
-        /// После каких по счёту успешных генераций показывать запрос оценки ([2, 10, 50]). Nil → дефолт [2].
-        let showRatingAfterGenerations: [Int]?
-        /// Показывать ли paywall после завершения онбординга. Nil → true (показывать).
-        let showPaywallAfterOnboarding: Bool?
 
-        /// Стартовый баланс токенов для AI Video token wallet.
+    struct LogicConfig: Codable {
+        /// После каких по счёту успешных генераций показывать запрос оценки.
+        let showRatingAfterGenerations: [Int]?
+        /// Показывать ли paywall после завершения онбординга.
+        let showPaywallAfterOnboarding: Bool?
+        /// Лимиты генераций по продуктам (ключ — `vendorProductId`).
+        let generationLimits: [String: Int]?
+        /// Рельсы главной и «View all»: включать motion-превью карточек.
+        let effectsCatalogAllowsMotionPreview: Bool?
+        /// Показывать ли постер до старта motion.
+        let effectsCatalogShowPosterBeforeMotion: Bool?
+        /// Стартовый баланс токенов для token wallet.
         let startingTokenBalance: Int?
-        /// Дневной порог бесплатного рефила: при новом календарном дне баланс = `max(текущий, daily)` — ниже не опускаем, выше не режем.
+        /// Дневной минимум токенов при новом дне.
         let dailyTokenAllowance: Int?
-        /// Единая цена generation по эффекту, когда `effect_presets.token_cost == nil`.
+        /// Цена generation по эффекту, когда token_cost отсутствует в БД.
         let tokensPerEffectGeneration: Int?
         /// Цена prompt-video за секунду.
         let promptVideoTokensPerSecond: Int?
-        /// При audio=on: столько токенов добавляется за каждую секунду длительности видео (умножается на duration).
+        /// Доплата за аудио за каждую секунду prompt-video.
         let promptVideoAudioAddonTokens: Int?
         /// Цена prompt-photo generation.
         let promptPhotoGenerationTokens: Int?
 
         init(
-            defaultSelectedPlanIndex: Int,
-            showTrialFirst: Bool?,
-            highlightAnnual: Bool?,
-            showSavingsPercentage: Bool?,
-            showPrivacyLinks: Bool,
-            showcaseEnabled: Bool?,
-            freeGenerationsLimit: Int?,
-            showRatingAfterGenerations: [Int]?,
-            showPaywallAfterOnboarding: Bool?,
+            showRatingAfterGenerations: [Int]? = nil,
+            showPaywallAfterOnboarding: Bool? = nil,
+            generationLimits: [String: Int]? = nil,
+            effectsCatalogAllowsMotionPreview: Bool? = nil,
+            effectsCatalogShowPosterBeforeMotion: Bool? = nil,
             startingTokenBalance: Int? = nil,
             dailyTokenAllowance: Int? = nil,
             tokensPerEffectGeneration: Int? = nil,
@@ -183,15 +136,11 @@ struct PaywallConfig: Codable {
             promptVideoAudioAddonTokens: Int? = nil,
             promptPhotoGenerationTokens: Int? = nil
         ) {
-            self.defaultSelectedPlanIndex = defaultSelectedPlanIndex
-            self.showTrialFirst = showTrialFirst
-            self.highlightAnnual = highlightAnnual
-            self.showSavingsPercentage = showSavingsPercentage
-            self.showPrivacyLinks = showPrivacyLinks
-            self.showcaseEnabled = showcaseEnabled
-            self.freeGenerationsLimit = freeGenerationsLimit
             self.showRatingAfterGenerations = showRatingAfterGenerations
             self.showPaywallAfterOnboarding = showPaywallAfterOnboarding
+            self.generationLimits = generationLimits
+            self.effectsCatalogAllowsMotionPreview = effectsCatalogAllowsMotionPreview
+            self.effectsCatalogShowPosterBeforeMotion = effectsCatalogShowPosterBeforeMotion
             self.startingTokenBalance = startingTokenBalance
             self.dailyTokenAllowance = dailyTokenAllowance
             self.tokensPerEffectGeneration = tokensPerEffectGeneration
@@ -201,9 +150,9 @@ struct PaywallConfig: Codable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case defaultSelectedPlanIndex, showTrialFirst, highlightAnnual, showSavingsPercentage
-            case showPrivacyLinks, showcaseEnabled
-            case freeGenerationsLimit, showRatingAfterGenerations, showPaywallAfterOnboarding
+            case showRatingAfterGenerations, showPaywallAfterOnboarding, generationLimits
+            case effectsCatalogAllowsMotionPreview, effects_catalog_allows_motion_preview
+            case effectsCatalogShowPosterBeforeMotion, effects_catalog_show_poster_before_motion
             case startingTokenBalance, dailyTokenAllowance, tokensPerEffectGeneration
             case promptVideoTokensPerSecond, promptVideoAudioAddonTokens, promptPhotoGenerationTokens
             case starting_token_balance, daily_token_allowance, tokens_per_effect_generation
@@ -211,135 +160,94 @@ struct PaywallConfig: Codable {
         }
 
         init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            let defaults = PaywallConfig.LogicConfig.getDefault()
-            defaultSelectedPlanIndex = try container.decodeIfPresent(Int.self, forKey: .defaultSelectedPlanIndex) ?? defaults.defaultSelectedPlanIndex
-            showTrialFirst = try container.decodeIfPresent(Bool.self, forKey: .showTrialFirst) ?? defaults.showTrialFirst
-            highlightAnnual = try container.decodeIfPresent(Bool.self, forKey: .highlightAnnual) ?? defaults.highlightAnnual
-            showSavingsPercentage = try container.decodeIfPresent(Bool.self, forKey: .showSavingsPercentage) ?? defaults.showSavingsPercentage
-            showPrivacyLinks = try container.decodeIfPresent(Bool.self, forKey: .showPrivacyLinks) ?? defaults.showPrivacyLinks
-            showcaseEnabled = try container.decodeIfPresent(Bool.self, forKey: .showcaseEnabled) ?? defaults.showcaseEnabled
-            freeGenerationsLimit = try container.decodeIfPresent(Int.self, forKey: .freeGenerationsLimit) ?? defaults.freeGenerationsLimit
-            showRatingAfterGenerations = try container.decodeIfPresent([Int].self, forKey: .showRatingAfterGenerations) ?? defaults.showRatingAfterGenerations
-            showPaywallAfterOnboarding = try container.decodeIfPresent(Bool.self, forKey: .showPaywallAfterOnboarding) ?? defaults.showPaywallAfterOnboarding
-            startingTokenBalance = try container.decodeIfPresent(Int.self, forKey: .startingTokenBalance) ?? container.decodeIfPresent(Int.self, forKey: .starting_token_balance) ?? defaults.startingTokenBalance
-            dailyTokenAllowance = try container.decodeIfPresent(Int.self, forKey: .dailyTokenAllowance) ?? container.decodeIfPresent(Int.self, forKey: .daily_token_allowance) ?? defaults.dailyTokenAllowance
-            tokensPerEffectGeneration = try container.decodeIfPresent(Int.self, forKey: .tokensPerEffectGeneration) ?? container.decodeIfPresent(Int.self, forKey: .tokens_per_effect_generation) ?? defaults.tokensPerEffectGeneration
-            promptVideoTokensPerSecond = try container.decodeIfPresent(Int.self, forKey: .promptVideoTokensPerSecond) ?? container.decodeIfPresent(Int.self, forKey: .prompt_video_tokens_per_second) ?? defaults.promptVideoTokensPerSecond
-            promptVideoAudioAddonTokens = try container.decodeIfPresent(Int.self, forKey: .promptVideoAudioAddonTokens) ?? container.decodeIfPresent(Int.self, forKey: .prompt_video_audio_addon_tokens) ?? defaults.promptVideoAudioAddonTokens
-            promptPhotoGenerationTokens = try container.decodeIfPresent(Int.self, forKey: .promptPhotoGenerationTokens) ?? container.decodeIfPresent(Int.self, forKey: .prompt_photo_generation_tokens) ?? defaults.promptPhotoGenerationTokens
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            showRatingAfterGenerations = try c.decodeIfPresent([Int].self, forKey: .showRatingAfterGenerations)
+            showPaywallAfterOnboarding = try c.decodeIfPresent(Bool.self, forKey: .showPaywallAfterOnboarding)
+            generationLimits = try c.decodeIfPresent([String: Int].self, forKey: .generationLimits)
+            effectsCatalogAllowsMotionPreview =
+                try c.decodeIfPresent(Bool.self, forKey: .effectsCatalogAllowsMotionPreview)
+                ?? c.decodeIfPresent(Bool.self, forKey: .effects_catalog_allows_motion_preview)
+            effectsCatalogShowPosterBeforeMotion =
+                try c.decodeIfPresent(Bool.self, forKey: .effectsCatalogShowPosterBeforeMotion)
+                ?? c.decodeIfPresent(Bool.self, forKey: .effects_catalog_show_poster_before_motion)
+            startingTokenBalance =
+                try c.decodeIfPresent(Int.self, forKey: .startingTokenBalance)
+                ?? c.decodeIfPresent(Int.self, forKey: .starting_token_balance)
+            dailyTokenAllowance =
+                try c.decodeIfPresent(Int.self, forKey: .dailyTokenAllowance)
+                ?? c.decodeIfPresent(Int.self, forKey: .daily_token_allowance)
+            tokensPerEffectGeneration =
+                try c.decodeIfPresent(Int.self, forKey: .tokensPerEffectGeneration)
+                ?? c.decodeIfPresent(Int.self, forKey: .tokens_per_effect_generation)
+            promptVideoTokensPerSecond =
+                try c.decodeIfPresent(Int.self, forKey: .promptVideoTokensPerSecond)
+                ?? c.decodeIfPresent(Int.self, forKey: .prompt_video_tokens_per_second)
+            promptVideoAudioAddonTokens =
+                try c.decodeIfPresent(Int.self, forKey: .promptVideoAudioAddonTokens)
+                ?? c.decodeIfPresent(Int.self, forKey: .prompt_video_audio_addon_tokens)
+            promptPhotoGenerationTokens =
+                try c.decodeIfPresent(Int.self, forKey: .promptPhotoGenerationTokens)
+                ?? c.decodeIfPresent(Int.self, forKey: .prompt_photo_generation_tokens)
         }
 
         func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(defaultSelectedPlanIndex, forKey: .defaultSelectedPlanIndex)
-            try container.encodeIfPresent(showTrialFirst, forKey: .showTrialFirst)
-            try container.encodeIfPresent(highlightAnnual, forKey: .highlightAnnual)
-            try container.encodeIfPresent(showSavingsPercentage, forKey: .showSavingsPercentage)
-            try container.encode(showPrivacyLinks, forKey: .showPrivacyLinks)
-            try container.encodeIfPresent(showcaseEnabled, forKey: .showcaseEnabled)
-            try container.encodeIfPresent(freeGenerationsLimit, forKey: .freeGenerationsLimit)
-            try container.encodeIfPresent(showRatingAfterGenerations, forKey: .showRatingAfterGenerations)
-            try container.encodeIfPresent(showPaywallAfterOnboarding, forKey: .showPaywallAfterOnboarding)
-            try container.encodeIfPresent(startingTokenBalance, forKey: .startingTokenBalance)
-            try container.encodeIfPresent(dailyTokenAllowance, forKey: .dailyTokenAllowance)
-            try container.encodeIfPresent(tokensPerEffectGeneration, forKey: .tokensPerEffectGeneration)
-            try container.encodeIfPresent(promptVideoTokensPerSecond, forKey: .promptVideoTokensPerSecond)
-            try container.encodeIfPresent(promptVideoAudioAddonTokens, forKey: .promptVideoAudioAddonTokens)
-            try container.encodeIfPresent(promptPhotoGenerationTokens, forKey: .promptPhotoGenerationTokens)
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encodeIfPresent(showRatingAfterGenerations, forKey: .showRatingAfterGenerations)
+            try c.encodeIfPresent(showPaywallAfterOnboarding, forKey: .showPaywallAfterOnboarding)
+            try c.encodeIfPresent(generationLimits, forKey: .generationLimits)
+            try c.encodeIfPresent(effectsCatalogAllowsMotionPreview, forKey: .effectsCatalogAllowsMotionPreview)
+            try c.encodeIfPresent(effectsCatalogShowPosterBeforeMotion, forKey: .effectsCatalogShowPosterBeforeMotion)
+            try c.encodeIfPresent(startingTokenBalance, forKey: .startingTokenBalance)
+            try c.encodeIfPresent(dailyTokenAllowance, forKey: .dailyTokenAllowance)
+            try c.encodeIfPresent(tokensPerEffectGeneration, forKey: .tokensPerEffectGeneration)
+            try c.encodeIfPresent(promptVideoTokensPerSecond, forKey: .promptVideoTokensPerSecond)
+            try c.encodeIfPresent(promptVideoAudioAddonTokens, forKey: .promptVideoAudioAddonTokens)
+            try c.encodeIfPresent(promptPhotoGenerationTokens, forKey: .promptPhotoGenerationTokens)
         }
-    }
-    
-    // MARK: - Localization Support
-    
-    /// Получить локализованные фичи
-    func getLocalizedFeatures() -> [String] {
-        return features.map { feature in
-            // Если строка начинается с "feature_", считаем её ключом локализации
-            if feature.hasPrefix("feature_") {
-                return feature.localized
-            } else {
-                // Иначе возвращаем как есть (для кастомных строк)
-                return feature
-            }
-        }
-    }
-    
-    /// Получить локализованный заголовок
-    func getLocalizedTitle() -> String {
-        if title.hasPrefix("paywall_") {
-            return title.localized
-        }
-        return title
-    }
-    
-    /// Получить локализованный подзаголовок
-    func getLocalizedSubtitle() -> String {
-        if subtitle.hasPrefix("paywall_") {
-            return subtitle.localized
-        }
-        return subtitle
     }
 
-    /// Явный инициализатор: после кастомного `Decodable` у структуры нет синтезируемого memberwise init.
+    /// Явный инициализатор нужен для создания merged-конфига (base + Adapty overlay).
     init(
-        title: String,
-        subtitle: String,
-        features: [String],
         planIds: [String]?,
         purchasePlanIds: [String]?,
         trialsPlanIds: [String]?,
-        generationLimits: [String: Int]?,
         adapty: PaywallAdaptyCatalog?,
-        ui: UIConfig,
         logic: LogicConfig
     ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.features = features
         self.planIds = planIds
         self.purchasePlanIds = purchasePlanIds
         self.trialsPlanIds = trialsPlanIds
-        self.generationLimits = generationLimits
         self.adapty = adapty
-        self.ui = ui
         self.logic = logic
     }
 }
 
-// MARK: - PaywallConfig decoding (частичный bundled JSON дополняется дефолтами из `getDefault()`)
-
 extension PaywallConfig {
     enum CodingKeys: String, CodingKey {
-        case title, subtitle, features, planIds, purchasePlanIds, trialsPlanIds, generationLimits, adapty, ui, logic
+        case planIds, purchasePlanIds, trialsPlanIds, generationLimits, adapty, logic
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        let bundledDefaults = PaywallConfig.getDefault()
-        title = try c.decodeIfPresent(String.self, forKey: .title) ?? bundledDefaults.title
-        subtitle = try c.decodeIfPresent(String.self, forKey: .subtitle) ?? bundledDefaults.subtitle
-        features = try c.decodeIfPresent([String].self, forKey: .features) ?? bundledDefaults.features
         planIds = try c.decodeIfPresent([String].self, forKey: .planIds)
         purchasePlanIds = try c.decodeIfPresent([String].self, forKey: .purchasePlanIds)
         trialsPlanIds = try c.decodeIfPresent([String].self, forKey: .trialsPlanIds)
-        generationLimits = try c.decodeIfPresent([String: Int].self, forKey: .generationLimits)
         adapty = try c.decodeIfPresent(PaywallAdaptyCatalog.self, forKey: .adapty)
-        ui = try c.decodeIfPresent(UIConfig.self, forKey: .ui) ?? UIConfig.getDefault()
-        logic = try c.decodeIfPresent(LogicConfig.self, forKey: .logic) ?? LogicConfig.getDefault()
+        // Legacy: корневой `generationLimits` (до переноса в `logic`) объединяем с вложенным `logic.generationLimits`.
+        let legacyRootLimits = try c.decodeIfPresent([String: Int].self, forKey: .generationLimits)
+        var decodedLogic = try c.decodeIfPresent(LogicConfig.self, forKey: .logic) ?? LogicConfig()
+        if let legacyRootLimits, !legacyRootLimits.isEmpty {
+            decodedLogic = decodedLogic.mergingRootLegacyGenerationLimits(legacyRootLimits)
+        }
+        logic = decodedLogic
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(title, forKey: .title)
-        try c.encode(subtitle, forKey: .subtitle)
-        try c.encode(features, forKey: .features)
         try c.encodeIfPresent(planIds, forKey: .planIds)
         try c.encodeIfPresent(purchasePlanIds, forKey: .purchasePlanIds)
         try c.encodeIfPresent(trialsPlanIds, forKey: .trialsPlanIds)
-        try c.encodeIfPresent(generationLimits, forKey: .generationLimits)
         try c.encodeIfPresent(adapty, forKey: .adapty)
-        try c.encode(ui, forKey: .ui)
         try c.encode(logic, forKey: .logic)
     }
 }
@@ -448,40 +356,53 @@ class PaywallCacheManager: ObservableObject {
     
     // MARK: - Cache Management
     
-    /// Загрузить и кэшировать конфигурацию paywall и продукты (async)
+    /// Загрузить и кэшировать конфигурацию paywall и продукты (async).
+    /// Зачем: первый проход даёт быстрый cache-first, второй (forceRefresh) подтягивает свежие данные из сети.
     @discardableResult
-    func loadAndCachePaywallDataAsync() async -> Bool {
-        await MainActor.run { isLoading = true; error = nil }
+    func loadAndCachePaywallDataAsync(forceRefresh: Bool = false, updatesLoadingIndicator: Bool = true) async -> Bool {
+        if updatesLoadingIndicator {
+            await MainActor.run { isLoading = true; error = nil }
+        }
         print("🔄 [PaywallCacheManager] Начинаем загрузку данных paywall...")
-        print("[paywall] loadAndCachePaywallDataAsync: старт tier=\(currentPlacementTier.rawValue) productsCache.count=\(productsCache.count)")
+        print("[paywall] loadAndCachePaywallDataAsync: старт tier=\(currentPlacementTier.rawValue) productsCache.count=\(productsCache.count) forceRefresh=\(forceRefresh) updatesLoadingIndicator=\(updatesLoadingIndicator)")
 
-        // Сначала конфиг, потом продукты: на симуляторе Xcode 26 параллельный старт давал getPaywallProducts / Product.products до готовности StoreKit Testing из схемы (пустой каталог).
-        let c = await loadPaywallConfigAsync()
-        let p = await loadProductsAsync()
+        // Параллелим конфиг и продукты: AdaptyService дедуплицирует общий paywall-запрос, поэтому не получаем двойной сетевой hit.
+        async let c = loadPaywallConfigAsync(forceRefresh: forceRefresh)
+        async let p = loadProductsAsync(forceRefresh: forceRefresh)
+        let (configLoaded, productsLoaded) = await (c, p)
 
-        await MainActor.run { self.isLoading = false }
+        if updatesLoadingIndicator {
+            await MainActor.run { self.isLoading = false }
+        }
 
-        if c && p {
+        if configLoaded && productsLoaded {
             print("✅ [PaywallCacheManager] Все данные успешно загружены и кэшированы")
             print("[paywall] loadAndCachePaywallDataAsync: успех config+products productsCache.count=\(productsCache.count) planIds=\(String(describing: paywallConfig?.planIds)) purchasePlanIds=\(String(describing: paywallConfig?.purchasePlanIds))")
             await MainActor.run { self.updateLastCacheTime() }
         } else {
-            print("⚠️ [PaywallCacheManager] Частичная загрузка: config=\(c), products=\(p)")
-            print("[paywall] loadAndCachePaywallDataAsync: частично config=\(c) products=\(p) productsCache.count=\(productsCache.count)")
+            print("⚠️ [PaywallCacheManager] Частичная загрузка: config=\(configLoaded), products=\(productsLoaded)")
+            print("[paywall] loadAndCachePaywallDataAsync: частично config=\(configLoaded) products=\(productsLoaded) productsCache.count=\(productsCache.count)")
         }
-        return c && p
+        return configLoaded && productsLoaded
     }
 
     /// Обёртка для обратной совместимости
-    func loadAndCachePaywallData(completion: @escaping (Bool) -> Void) {
+    func loadAndCachePaywallData(
+        forceRefresh: Bool = false,
+        updatesLoadingIndicator: Bool = true,
+        completion: @escaping (Bool) -> Void
+    ) {
         Task {
-            let result = await loadAndCachePaywallDataAsync()
+            let result = await loadAndCachePaywallDataAsync(
+                forceRefresh: forceRefresh,
+                updatesLoadingIndicator: updatesLoadingIndicator
+            )
             completion(result)
         }
     }
 
     /// Загрузить конфигурацию paywall из Adapty (чистая async-функция)
-    private func loadPaywallConfigAsync() async -> Bool {
+    private func loadPaywallConfigAsync(forceRefresh: Bool = false) async -> Bool {
         await MainActor.run {
             self.hasAttemptedRemoteConfigLoad = true
             self.isRemotePaywallConfigLoadFinished = false
@@ -494,7 +415,7 @@ class PaywallCacheManager: ObservableObject {
         print("[paywall] loadPaywallConfigAsync: bundled placementId=\(pl) planIds=\(String(describing: baseConfig.planIds)) purchasePlanIds=\(String(describing: baseConfig.purchasePlanIds))")
 
         do {
-            let adaptyConfig = try await AdaptyService.shared.fetchPaywallConfigAsync()
+            let adaptyConfig = try await AdaptyService.shared.fetchPaywallConfigAsync(forceRefresh: forceRefresh)
             let mergedConfig = mergeConfigs(base: baseConfig, adapty: adaptyConfig)
             await MainActor.run {
                 self.paywallConfig = mergedConfig
@@ -520,14 +441,16 @@ class PaywallCacheManager: ObservableObject {
     }
     
     /// Загрузить информацию о продуктах из Adapty, с локальным StoreKit fallback для разработки.
-    private func loadProductsAsync() async -> Bool {
+    private func loadProductsAsync(forceRefresh: Bool = false) async -> Bool {
         #if targetEnvironment(simulator)
         // Тот же StoreKit 2 под капотом Adapty.getPaywallProducts; на симуляторе с .storekit в схеме первый запрос в первые миллисекунды после launch часто даёт noProductIDsFound.
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        if !forceRefresh {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
         #endif
         print("[paywall] loadProductsAsync: запрос продуктов через Adapty.getPaywallProducts…")
         do {
-            let products = try await AdaptyService.shared.fetchProductsAsync()
+            let products = try await AdaptyService.shared.fetchProductsAsync(forceRefresh: forceRefresh)
             var productsInfo: [String: ProductInfo] = [:]
             var order: [String] = []
             var cache: [String: AdaptyPaywallProduct] = [:]
@@ -770,27 +693,21 @@ class PaywallCacheManager: ObservableObject {
 
         guard let url = Bundle.main.url(forResource: "paywall_config", withExtension: "json") else {
             print("🚨 [PaywallCacheManager] Файл paywall_config.json не найден в Bundle")
-            let fallback = PaywallConfig.getDefault()
-            bundleConfigCache = fallback
-            return fallback
+            fatalError("paywall_config.json must exist in bundle")
         }
 
         print("✅ [PaywallCacheManager] Файл найден: \(url)")
 
         guard let data = try? Data(contentsOf: url) else {
             print("🚨 [PaywallCacheManager] Не удалось прочитать данные из файла")
-            let fallback = PaywallConfig.getDefault()
-            bundleConfigCache = fallback
-            return fallback
+            fatalError("Unable to read paywall_config.json from bundle")
         }
 
         print("✅ [PaywallCacheManager] Данные прочитаны, размер: \(data.count) байт")
 
         guard let config = try? JSONDecoder().decode(PaywallConfig.self, from: data) else {
             print("🚨 [PaywallCacheManager] Не удалось декодировать JSON")
-            let fallback = PaywallConfig.getDefault()
-            bundleConfigCache = fallback
-            return fallback
+            fatalError("Invalid paywall_config.json format")
         }
 
         print("📁 [PaywallCacheManager] Базовая конфигурация загружена из paywall_config.json")
@@ -800,35 +717,17 @@ class PaywallCacheManager: ObservableObject {
     
     /// Объединить базовую конфигурацию с настройками из Adapty
     private func mergeConfigs(base: PaywallConfig, adapty: PaywallConfig) -> PaywallConfig {
-        print("🔍 [PaywallCacheManager] Объединяем конфигурации:")
-        print("  Базовая (проект) и Adapty логика будут слиты")
-        
-        // Приоритет: Adapty переопределяет локальный конфиг для всех полей, где есть значение.
-        // generationLimits мёржим по ключам (Adapty перезаписывает отдельные ключи, не весь словарь),
-        // чтобы частичный override из Adapty (например один `vendorProductId` → лимит) не стёр остальные ключи локального JSON.
-        let mergedLimits: [String: Int]? = {
-            switch (base.generationLimits, adapty.generationLimits) {
-            case (nil, let a): return a
-            case (let b, nil): return b
-            case (let b?, let a?): return b.merging(a) { _, adaptyValue in adaptyValue }
-            }
-        }()
+        // С Adapty подмешиваем только `logic` (включая `generationLimits` внутри него). Остальное — из бандла.
+        let mergedLogic = PaywallConfig.LogicConfig.mergedRemote(adapty.logic, over: base.logic)
+        print("[paywall] mergeConfigs: logic merged generationLimits.keys=\(mergedLogic.generationLimits?.keys.sorted() ?? []) motion=\(String(describing: mergedLogic.effectsCatalogAllowsMotionPreview)) poster=\(String(describing: mergedLogic.effectsCatalogShowPosterBeforeMotion))")
 
-        let mergedConfig = PaywallConfig.createWithDefaults(
-            title: adapty.title != base.title ? adapty.title : base.title,
-            subtitle: adapty.subtitle != base.subtitle ? adapty.subtitle : base.subtitle,
-            features: adapty.features != base.features ? adapty.features : base.features,
-            planIds: adapty.planIds ?? base.planIds,
-            purchasePlanIds: adapty.purchasePlanIds ?? base.purchasePlanIds,
-            generationLimits: mergedLimits,
-            adapty: PaywallAdaptyCatalog.mergedOverlay(remote: adapty.adapty, base: base.adapty),
-            // UI: remote целиком. Logic: optional-поля накладываем поверх bundled, чтобы «пустой» remote (`getDefault()`)
-            // не затирал токены и флаги из `paywall_config.json`.
-            ui: adapty.ui,
-            logic: PaywallConfig.LogicConfig.mergedRemote(adapty.logic, over: base.logic)
+        return PaywallConfig(
+            planIds: base.planIds,
+            purchasePlanIds: base.purchasePlanIds,
+            trialsPlanIds: base.trialsPlanIds,
+            adapty: base.adapty,
+            logic: mergedLogic
         )
-        print("[paywall] mergeConfigs: итог planIds=\(String(describing: mergedConfig.planIds)) purchasePlanIds=\(String(describing: mergedConfig.purchasePlanIds)) generationLimits.keys=\(mergedConfig.generationLimits?.keys.sorted() ?? [])")
-        return mergedConfig
     }
     
     // MARK: - Cache Storage
@@ -898,7 +797,7 @@ class PaywallCacheManager: ObservableObject {
     
     /// Получить дефолтный выбранный план
     func getDefaultSelectedPlanIndex() -> Int {
-        return paywallConfig?.logic.defaultSelectedPlanIndex ?? 0
+        return 0
     }
 
     /// Adapty placement из `paywall_config.json` → `adapty.placementId` (один на всё приложение).
@@ -914,19 +813,6 @@ class PaywallCacheManager: ObservableObject {
         return id
     }
 
-    /// Paywall builder id из конфига — только для логов/диагностики; SDK грузит paywall по placement.
-    func configuredAdaptyPaywallId() throws -> String {
-        guard let id = paywallConfig?.adapty?.paywallId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !id.isEmpty else {
-            throw NSError(
-                domain: "PaywallConfig",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Missing adapty.paywallId in paywall_config.json"]
-            )
-        }
-        return id
-    }
-    
     /// Проверить, есть ли кэшированные данные (и они валидны — без аномальных лимитов)
     func hasCachedData() -> Bool {
         if paywallConfig == nil {
@@ -938,7 +824,7 @@ class PaywallCacheManager: ObservableObject {
             return false
         }
         // Проверяем что лимиты не аномальные (оверфлоу/таймстемп и т.п.)
-        if let limits = paywallConfig?.generationLimits {
+        if let limits = paywallConfig?.logic.generationLimits {
             let hasAbnormal = limits.values.contains { $0 >= 100_000 }
             if hasAbnormal {
                 print("⚠️ [PaywallCacheManager] Обнаружены аномальные generationLimits в кэше: \(limits). Сбрасываем кэш.")
@@ -972,10 +858,10 @@ class PaywallCacheManager: ObservableObject {
     }
     
     /// Количество генераций для продукта.
-    /// Иерархия: Adapty/local generationLimits → парсинг числа из vendorProductId → парсинг из localizedTitle.
+    /// Иерархия: `logic.generationLimits` (бандл + Adapty) → парсинг из vendorProductId → из localizedTitle.
     func generationLimit(for vendorProductId: String, title: String? = nil) -> Int? {
-        // 1. Из generationLimits (Adapty или локальный конфиг)
-        if let limits = paywallConfig?.generationLimits, !limits.isEmpty {
+        // 1. Из `logic.generationLimits`
+        if let limits = paywallConfig?.logic.generationLimits, !limits.isEmpty {
             if let count = limits[vendorProductId] { return count }
             let idTokens = Set(vendorProductId.components(separatedBy: "_"))
             let candidates = limits.keys.filter { key in
@@ -1023,189 +909,64 @@ class PaywallCacheManager: ObservableObject {
     }
 }
 
-// MARK: - Default Configuration
-
-extension PaywallConfig {
-    // Тексты и список фич paywall по умолчанию — только в коде; product/adapty-контракты задаёт bundled JSON.
-    static func getDefault() -> PaywallConfig {
-        return PaywallConfig(
-            title: "paywall_upgrade_to_pro",
-            subtitle: "paywall_enjoy_all_features",
-            features: [
-                "feature_premium_styles",
-                "feature_hd_quality",
-                "feature_no_watermarks",
-                "feature_priority_processing",
-                "feature_advanced_editing"
-            ],
-            planIds: nil,
-            purchasePlanIds: nil,
-            trialsPlanIds: nil,
-            generationLimits: nil,
-            adapty: nil,
-            ui: UIConfig.getDefault(),
-            logic: LogicConfig.getDefault()
-        )
-    }
-    
-    /// Создать конфигурацию с частичными данными, заполнив недостающие поля значениями по умолчанию
-    static func createWithDefaults(
-        title: String? = nil,
-        subtitle: String? = nil,
-        features: [String]? = nil,
-        planIds: [String]? = nil,
-        purchasePlanIds: [String]? = nil,
-        generationLimits: [String: Int]? = nil,
-        adapty: PaywallAdaptyCatalog? = nil,
-        ui: UIConfig? = nil,
-        logic: LogicConfig? = nil
-    ) -> PaywallConfig {
-        let defaultConfig = getDefault()
-        return PaywallConfig(
-            title: title ?? defaultConfig.title,
-            subtitle: subtitle ?? defaultConfig.subtitle,
-            features: features ?? defaultConfig.features,
-            planIds: planIds ?? defaultConfig.planIds,
-            purchasePlanIds: purchasePlanIds ?? defaultConfig.purchasePlanIds,
-            trialsPlanIds: defaultConfig.trialsPlanIds,
-            generationLimits: generationLimits ?? defaultConfig.generationLimits,
-            adapty: adapty ?? defaultConfig.adapty,
-            ui: ui ?? defaultConfig.ui,
-            logic: logic ?? defaultConfig.logic
-        )
-    }
-}
-
-// MARK: - Default UI Configuration
-
-extension PaywallConfig.UIConfig {
-    // Внешний вид paywall не дублируем в `paywall_config.json` — один источник правды здесь (remote по-прежнему может прислать override в `ui`).
-    static func getDefault() -> PaywallConfig.UIConfig {
-        return PaywallConfig.UIConfig(
-                backgroundColor: "#171A21",
-                primaryColor: "#FFFFFF",
-                accentColor: "#8B5CF6",
-                showMostPopularBadge: true,
-                carouselAutoScroll: true,
-                carouselInterval: 2.0,
-                showSkipButton: false,
-                skipButtonText: nil
-        )
-    }
-    
-    /// Создать UI конфигурацию с частичными данными
-    static func createWithDefaults(
-        backgroundColor: String? = nil,
-        primaryColor: String? = nil,
-        accentColor: String? = nil,
-        showMostPopularBadge: Bool? = nil,
-        carouselAutoScroll: Bool? = nil,
-        carouselInterval: Double? = nil,
-        showSkipButton: Bool? = nil,
-        skipButtonText: String? = nil
-    ) -> PaywallConfig.UIConfig {
-        let defaultConfig = getDefault()
-        
-        return PaywallConfig.UIConfig(
-            backgroundColor: backgroundColor ?? defaultConfig.backgroundColor,
-            primaryColor: primaryColor ?? defaultConfig.primaryColor,
-            accentColor: accentColor ?? defaultConfig.accentColor,
-            showMostPopularBadge: showMostPopularBadge ?? defaultConfig.showMostPopularBadge,
-            carouselAutoScroll: carouselAutoScroll ?? defaultConfig.carouselAutoScroll,
-            carouselInterval: carouselInterval ?? defaultConfig.carouselInterval,
-            showSkipButton: showSkipButton ?? defaultConfig.showSkipButton,
-            skipButtonText: skipButtonText ?? defaultConfig.skipButtonText
-        )
-    }
-}
-
-// MARK: - Default Logic Configuration
-
 extension PaywallConfig.LogicConfig {
-    static let defaultStartingTokenBalance = 30
-    static let defaultDailyTokenAllowance = 10
-    static let defaultTokensPerEffectGeneration = 25
-    static let defaultPromptVideoTokensPerSecond = 5
-    static let defaultPromptVideoAudioAddonTokens = 2
-    static let defaultPromptPhotoGenerationTokens = 1
-
-    // Поведение paywall по умолчанию и fallback для токенов; bundled JSON/remote могут прислать частичный `logic`.
-    static func getDefault() -> PaywallConfig.LogicConfig {
-        return PaywallConfig.LogicConfig(
-            defaultSelectedPlanIndex: 0,
-            showTrialFirst: false,
-            highlightAnnual: true,
-            showSavingsPercentage: true,
-            showPrivacyLinks: true,
-            showcaseEnabled: true,
-            freeGenerationsLimit: 3,
-            showRatingAfterGenerations: [2, 10, 50],
-            showPaywallAfterOnboarding: false,
-            startingTokenBalance: defaultStartingTokenBalance,
-            dailyTokenAllowance: defaultDailyTokenAllowance,
-            tokensPerEffectGeneration: defaultTokensPerEffectGeneration,
-            promptVideoTokensPerSecond: defaultPromptVideoTokensPerSecond,
-            promptVideoAudioAddonTokens: defaultPromptVideoAudioAddonTokens,
-            promptPhotoGenerationTokens: defaultPromptPhotoGenerationTokens
-        )
-    }
-    
-    /// Создать Logic конфигурацию с частичными данными
-    static func createWithDefaults(
-        defaultSelectedPlanIndex: Int? = nil,
-        showTrialFirst: Bool? = nil,
-        highlightAnnual: Bool? = nil,
-        showSavingsPercentage: Bool? = nil,
-        showPrivacyLinks: Bool? = nil,
-        showcaseEnabled: Bool? = nil,
-        freeGenerationsLimit: Int? = nil,
-        showRatingAfterGenerations: [Int]? = nil,
-        showPaywallAfterOnboarding: Bool? = nil,
-        startingTokenBalance: Int? = nil,
-        dailyTokenAllowance: Int? = nil,
-        tokensPerEffectGeneration: Int? = nil,
-        promptVideoTokensPerSecond: Int? = nil,
-        promptVideoAudioAddonTokens: Int? = nil,
-        promptPhotoGenerationTokens: Int? = nil
-    ) -> PaywallConfig.LogicConfig {
-        let defaultConfig = getDefault()
-        return PaywallConfig.LogicConfig(
-            defaultSelectedPlanIndex: defaultSelectedPlanIndex ?? defaultConfig.defaultSelectedPlanIndex,
-            showTrialFirst: showTrialFirst ?? defaultConfig.showTrialFirst,
-            highlightAnnual: highlightAnnual ?? defaultConfig.highlightAnnual,
-            showSavingsPercentage: showSavingsPercentage ?? defaultConfig.showSavingsPercentage,
-            showPrivacyLinks: showPrivacyLinks ?? defaultConfig.showPrivacyLinks,
-            showcaseEnabled: showcaseEnabled ?? defaultConfig.showcaseEnabled,
-            freeGenerationsLimit: freeGenerationsLimit ?? defaultConfig.freeGenerationsLimit,
-            showRatingAfterGenerations: showRatingAfterGenerations ?? defaultConfig.showRatingAfterGenerations,
-            showPaywallAfterOnboarding: showPaywallAfterOnboarding ?? defaultConfig.showPaywallAfterOnboarding,
-            startingTokenBalance: startingTokenBalance ?? defaultConfig.startingTokenBalance,
-            dailyTokenAllowance: dailyTokenAllowance ?? defaultConfig.dailyTokenAllowance,
-            tokensPerEffectGeneration: tokensPerEffectGeneration ?? defaultConfig.tokensPerEffectGeneration,
-            promptVideoTokensPerSecond: promptVideoTokensPerSecond ?? defaultConfig.promptVideoTokensPerSecond,
-            promptVideoAudioAddonTokens: promptVideoAudioAddonTokens ?? defaultConfig.promptVideoAudioAddonTokens,
-            promptPhotoGenerationTokens: promptPhotoGenerationTokens ?? defaultConfig.promptPhotoGenerationTokens
-        )
-    }
-
-    /// Слой Adapty поверх bundled `logic`: optional-поля не затираем nil из «пустого» remote.
+    /// Слой Adapty поверх bundled `logic`: сливаем только поля, пришедшие из remote; `generationLimits` мёржим по ключам.
     static func mergedRemote(_ remote: PaywallConfig.LogicConfig, over base: PaywallConfig.LogicConfig) -> PaywallConfig.LogicConfig {
-        PaywallConfig.LogicConfig(
-            defaultSelectedPlanIndex: remote.defaultSelectedPlanIndex,
-            showTrialFirst: remote.showTrialFirst ?? base.showTrialFirst,
-            highlightAnnual: remote.highlightAnnual ?? base.highlightAnnual,
-            showSavingsPercentage: remote.showSavingsPercentage ?? base.showSavingsPercentage,
-            showPrivacyLinks: remote.showPrivacyLinks,
-            showcaseEnabled: remote.showcaseEnabled ?? base.showcaseEnabled,
-            freeGenerationsLimit: remote.freeGenerationsLimit ?? base.freeGenerationsLimit,
+        let mergedLimits: [String: Int]? = {
+            switch (base.generationLimits, remote.generationLimits) {
+            case (nil, let r): return r
+            case (let b, nil): return b
+            case (let b?, let r?): return b.merging(r) { _, adaptyValue in adaptyValue }
+            }
+        }()
+        return PaywallConfig.LogicConfig(
             showRatingAfterGenerations: remote.showRatingAfterGenerations ?? base.showRatingAfterGenerations,
             showPaywallAfterOnboarding: remote.showPaywallAfterOnboarding ?? base.showPaywallAfterOnboarding,
+            generationLimits: mergedLimits,
+            effectsCatalogAllowsMotionPreview: remote.effectsCatalogAllowsMotionPreview ?? base.effectsCatalogAllowsMotionPreview,
+            effectsCatalogShowPosterBeforeMotion: remote.effectsCatalogShowPosterBeforeMotion ?? base.effectsCatalogShowPosterBeforeMotion,
             startingTokenBalance: remote.startingTokenBalance ?? base.startingTokenBalance,
             dailyTokenAllowance: remote.dailyTokenAllowance ?? base.dailyTokenAllowance,
             tokensPerEffectGeneration: remote.tokensPerEffectGeneration ?? base.tokensPerEffectGeneration,
             promptVideoTokensPerSecond: remote.promptVideoTokensPerSecond ?? base.promptVideoTokensPerSecond,
             promptVideoAudioAddonTokens: remote.promptVideoAudioAddonTokens ?? base.promptVideoAudioAddonTokens,
             promptPhotoGenerationTokens: remote.promptPhotoGenerationTokens ?? base.promptPhotoGenerationTokens
+        )
+    }
+
+    /// Legacy: корневой `generationLimits` в JSON до переноса в `logic` — при конфликте ключей побеждает вложенный `logic`.
+    fileprivate func mergingRootLegacyGenerationLimits(_ legacy: [String: Int]) -> PaywallConfig.LogicConfig {
+        let merged = legacy.merging(generationLimits ?? [:]) { _, fromLogic in fromLogic }
+        return PaywallConfig.LogicConfig(
+            showRatingAfterGenerations: showRatingAfterGenerations,
+            showPaywallAfterOnboarding: showPaywallAfterOnboarding,
+            generationLimits: merged.isEmpty ? nil : merged,
+            effectsCatalogAllowsMotionPreview: effectsCatalogAllowsMotionPreview,
+            effectsCatalogShowPosterBeforeMotion: effectsCatalogShowPosterBeforeMotion,
+            startingTokenBalance: startingTokenBalance,
+            dailyTokenAllowance: dailyTokenAllowance,
+            tokensPerEffectGeneration: tokensPerEffectGeneration,
+            promptVideoTokensPerSecond: promptVideoTokensPerSecond,
+            promptVideoAudioAddonTokens: promptVideoAudioAddonTokens,
+            promptPhotoGenerationTokens: promptPhotoGenerationTokens
+        )
+    }
+
+    /// Подмешивает лимиты из raw remote JSON (ключи overlay перекрывают текущие). Нужен `AdaptyService` при разборе сырого JSON.
+    func mergingGenerationLimitsOverlay(_ overlay: [String: Int]) -> PaywallConfig.LogicConfig {
+        let merged = (generationLimits ?? [:]).merging(overlay) { _, remote in remote }
+        return PaywallConfig.LogicConfig(
+            showRatingAfterGenerations: showRatingAfterGenerations,
+            showPaywallAfterOnboarding: showPaywallAfterOnboarding,
+            generationLimits: merged.isEmpty ? nil : merged,
+            effectsCatalogAllowsMotionPreview: effectsCatalogAllowsMotionPreview,
+            effectsCatalogShowPosterBeforeMotion: effectsCatalogShowPosterBeforeMotion,
+            startingTokenBalance: startingTokenBalance,
+            dailyTokenAllowance: dailyTokenAllowance,
+            tokensPerEffectGeneration: tokensPerEffectGeneration,
+            promptVideoTokensPerSecond: promptVideoTokensPerSecond,
+            promptVideoAudioAddonTokens: promptVideoAudioAddonTokens,
+            promptPhotoGenerationTokens: promptPhotoGenerationTokens
         )
     }
 }

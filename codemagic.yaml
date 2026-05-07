@@ -1,0 +1,31 @@
+workflows:
+  ios-release:
+    name: AIVideo iOS
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.jones.aivideo
+      vars:
+        XCODE_PROJECT: aivideo.xcodeproj
+        XCODE_SCHEME: aivideo
+      xcode: latest
+    integrations:
+      app_store_connect: "Daniel Jones - AI Video #1 - API Key"
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
+      - name: Build ipa for distribution
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false

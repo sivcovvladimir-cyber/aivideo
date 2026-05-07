@@ -42,6 +42,7 @@ struct SettingsView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var showLanguageSelector = false
+    @State private var showDebugSystemSettings = false
     @State private var showClearGalleryConfirmation = false
     /// Размер папки локальной галереи (`GeneratedImages`); справа у «Очистить галерею», как у языка.
     @State private var galleryFolderSizeLabel: String = "…"
@@ -71,6 +72,7 @@ struct SettingsView: View {
                     Task {
                         await AppAnalyticsService.shared.reportSettingsOpened()
                     }
+                    requestAppTrackingTransparencyIfNeeded()
                 }
             
             VStack(spacing: 0) {
@@ -361,6 +363,14 @@ struct SettingsView: View {
                                     }
                                 )
 
+                                SettingItem(
+                                    systemName: "slider.horizontal.3",
+                                    title: "System settings",
+                                    action: {
+                                        showDebugSystemSettings = true
+                                    }
+                                )
+
                                 // PRO Status Toggle
                                 HStack(spacing: 20) {
                                     // Icon
@@ -529,11 +539,16 @@ struct SettingsView: View {
         .sheet(isPresented: $showLanguageSelector) {
             LanguageSelectorView(appState: appState)
         }
+        .sheet(isPresented: $showDebugSystemSettings) {
+            DebugSystemSettingsSheet(appState: appState, tokenBalance: tokenWallet.balance)
+        }
     }
     
     // MARK: - Helper Methods
     
-    @State private var contactMessage = ""
+    @State private var contactMessageDraft = ""
+    @State private var contactEmailDraft = ""
+    @State private var isSendingContact = false
     
     private func openTermsOfService() {
         if let urlString = ConfigurationManager.shared.getValue(for: .termsOfServiceURL),
@@ -550,42 +565,65 @@ struct SettingsView: View {
     }
     
     private func openContactForm() {
-        let config = DynamicModalConfig(
+        contactMessageDraft = ""
+        contactEmailDraft = ""
+        let config = DynamicModalConfig.multiLineInput(
             title: "contact_us".localized,
             description: "contact_description".localized,
+            placeholder: "contact_message_placeholder".localized,
+            inputText: $contactMessageDraft,
+            allowDismissOnBackgroundTap: true,
             primaryButtonTitle: "send".localized,
-            secondaryButtonTitle: "cancel".localized,
-            iconName: "envelope.fill",
-            primaryAction: {
-                // This will be handled by inputAction
-            },
-            secondaryAction: {
-                // User cancelled
-            },
-            showInputField: true,
-            inputFieldType: .multiLine(placeholder: "contact_message_placeholder".localized),
-            inputText: .constant(""),
-            inputAction: { message in
-                // Отправляем сообщение через ContactService
-                ContactService.shared.submitContactForm(message: message) { result in
+            primaryAction: { message in
+                guard !isSendingContact else { return }
+                let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                isSendingContact = true
+                // Анти-даблтап: сразу закрываем модалку и показываем success, отправка уходит в фоне.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    appState.dynamicModalManager?.dismissModal()
+                    contactMessageDraft = ""
+                    contactEmailDraft = ""
+                    appState.notificationManager.showSuccess("contact_success_message".localized)
+                }
+
+                ContactService.shared.submitContactForm(
+                    message: trimmedMessage,
+                    replyEmail: nil,
+                    adaptyProfileId: appState.adaptyService.profile?.profileId
+                ) { result in
                     DispatchQueue.main.async {
-                        switch result {
-                        case .success:
-                            self.appState.notificationManager.showSuccess("contact_success_message".localized)
-                            self.appState.dynamicModalManager?.dismissModal()
-                        case .failure(let error):
-                            self.appState.notificationManager.showError("error_contact_send_failed".localized(with: error.localizedDescription))
+                        isSendingContact = false
+                        if case .failure(let error) = result {
+                            // UI уже ответил «спасибо», поэтому в фоне только логируем сбой доставки.
+                            print("❌ [ContactSupport] Background send failed: \(error.localizedDescription)")
                         }
                     }
                 }
             },
-            inputValidationError: { errorMessage in
-                appState.notificationManager.showError(errorMessage)
+            secondaryAction: {
+                isSendingContact = false
             },
-            allowDismissOnBackgroundTap: true
+            validationError: { errorMessage in
+                appState.notificationManager.showError(errorMessage)
+            }
         )
         
         appState.dynamicModalManager?.showModal(with: config)
+    }
+
+    private func isValidSupportReplyEmail(_ email: String) -> Bool {
+        let pattern = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        return email.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private func requestAppTrackingTransparencyIfNeeded() {
+        let askedKey = "settings_att_requested_once"
+        guard !UserDefaults.standard.bool(forKey: askedKey) else { return }
+        PermissionManager.shared.requestTrackingPermission { status in
+            print("🔍 [AI Video] IDFA permission status: \(status.rawValue)")
+            UserDefaults.standard.set(true, forKey: askedKey)
+        }
     }
     
     // MARK: - Debug Mode
@@ -673,6 +711,62 @@ struct SettingsView: View {
         showAlert = true
     }
 
+}
+
+/// Debug-экран для быстрой проверки runtime-настроек монетизации и лимитов без чтения логов.
+private struct DebugSystemSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appState: AppState
+    let tokenBalance: Int
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Paywall") {
+                    row("Placement tier", PaywallCacheManager.shared.currentPlacementTier.rawValue)
+                    row("Show after onboarding", boolString(PaywallCacheManager.shared.paywallConfig?.logic.showPaywallAfterOnboarding))
+                    row("Rating milestones", appState.showRatingAfterGenerations.map(String.init).joined(separator: ", "))
+                }
+                Section("Generations") {
+                    row("Free used/limit", "\(appState.successfulGenerationsCount)/\(appState.freeGenerationsLimit)")
+                    row("PRO used/limit", "\(appState.proGenerationsUsed)/\(appState.proGenerationsLimit.map(String.init) ?? "∞")")
+                    row("Bonus", "\(appState.bonusGenerations)")
+                }
+                Section("Wallet & profile") {
+                    row("Token balance", "\(tokenBalance)")
+                    row("Is PRO", "\(appState.isProUser)")
+                    row("Adapty profile ID", AdaptyService.shared.profile?.profileId ?? "—")
+                }
+                Section("System") {
+                    row("Bundle ID", Bundle.main.bundleIdentifier ?? "—")
+                    row("Locale", Locale.current.identifier)
+                    row("Version", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                    row("Build", Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")
+                }
+            }
+            .navigationTitle("System settings")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func boolString(_ value: Bool?) -> String {
+        guard let value else { return "nil" }
+        return value ? "true" : "false"
+    }
 }
 
 struct SettingItem: View {

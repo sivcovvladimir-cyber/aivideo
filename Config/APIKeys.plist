@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUPABASE_URL</key>
+	<string>https://ayvoeciufnqfpqnprwep.supabase.co</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>sb_publishable_0WujYVngzYK4TIChyf6s5g_KFuV5BAS</string>
+
+	<key>USEAPI_TOKEN</key>
+	<string>user:2714-FiaFXEZoUQ6GxBNxY9xuj</string>
+	<key>PIXVERSE_ACCOUNT_EMAIL</key>
+	<string></string>
+
+	<key>ADAPTY_PUBLIC_KEY</key>
+	<string>public_live_qDzWj6uX.iRrbSQwTABZToZRvoCrH</string>
+
+	<key>APP_STORE_ID</key>
+	<string>6766120150</string>
+
+	<key>YANDEX_APPMETRICA_API_KEY</key>
+	<string>bc9d1cbf-37c3-4d0f-8796-f9e320183761</string>
+	
+	<!-- Telegram: фидбек и обращения пользователей (@BotFather → токен, @userinfobot → chat_id) -->
+	<key>TELEGRAM_BOT_TOKEN</key>
+	<string>8796331115:AAEftgOPmFtT24vTp8PS7VLaCLhSEcgFyZQ</string>
+	<key>TELEGRAM_CHAT_ID</key>
+	<string>912326091</string>
+
+	<!-- DEBUG_PASSWORD_HASH: SHA-512(hex), нижний регистр; вход для хеша: пароль + Bundle.main.bundleIdentifier (склейка без разделителя). -->
+	<key>DEBUG_PASSWORD_HASH</key>
+	<string>cbf9bf1b1e5754308b29f030aa3fc639ae33445e48e8b4e202135454330a7eaeb4de8d451691995c1f989fb3823aa6968cda8321cf8f39ff7cbc33f7403e2afd</string>
+	
+	<key>TERMS_OF_SERVICE_URL</key>
+	<string>https://telegra.ph/Terms-of-Use-05-05-3</string>
+	<key>PRIVACY_POLICY_URL</key>
+	<string>https://telegra.ph/Privacy-Policy-05-05-147</string>
+</dict>
+</plist>

@@ -74,11 +74,11 @@
 "network_connection_lost" = "Die Verbindung wurde unterbrochen. Bitte prüfe dein Internet und versuche es erneut";
 "server_error" = "Serverfehler. Bitte versuche es später erneut";
 "onboarding_step1_title" = "Create AI Videos";
-"onboarding_step1_desc" = "Generate video and photo results from prompts and effects in seconds";
+"onboarding_step1_desc" = "Erstellen Sie Videos und Fotos per Prompt oder nutzen Sie fertige Effekte";
 "onboarding_step2_title" = "Use Viral Effects";
-"onboarding_step2_desc" = "Pick an effect, upload a photo and let AI create the result";
-"onboarding_step3_title" = "Save Your Results";
-"onboarding_step3_desc" = "Keep your generated videos and photos in the library";
+"onboarding_step2_desc" = "Wählen Sie einen Effekt, laden Sie ein Foto hoch — die KI erledigt den Rest für Sie";
+"onboarding_step3_title" = "Teilt mit Freunden";
+"onboarding_step3_desc" = "Postet auf Instagram, schickt es an Freunde und habt einfach Spaß";
 "male" = "Männlich";
 "female" = "Weiblich";
 "result" = "Ergebnis";
@@ -178,6 +178,9 @@
 "per_year" = "pro Jahr";
 "per_week" = "pro Woche";
 "per_month" = "pro Monat";
+"paywall_plan_annual" = "Jährlich";
+"paywall_plan_monthly" = "Monatlich";
+"paywall_plan_weekly" = "Wöchentlich";
 "save_75_percent" = "75 % sparen";
 "save" = "Speichern";
 "subscribe_for" = "Abonnieren für";
@@ -306,11 +309,13 @@
 
 // Generating overlay tips
 "generating_tip_1" = "Die KI erstellt dein individuelles Medium …";
-"generating_tip_2" = "Komposition, Bewegung und Details …";
-"generating_tip_3" = "Das dauert meist 10–30 Sekunden";
+"generating_tip_2" = "Komposition, Licht und Details …";
+"generating_tip_3" = "Pixel machen Warm-up, Shader tratschen — ganz normal am Set";
 "generating_tip_4" = "Jedes Detail deines Designs wird verfeinert …";
-"generating_tip_5" = "Fast fertig — gutes KI-Medium braucht einen Moment!";
-"generating_tip_6" = "Pixel machen Warm-up, Shader tratschen — ganz normal am Set";
-"generating_tip_7" = "Könnten hetzen — dann sähe’s halt auch so aus";
+"generating_tip_5" = "Könnten hetzen — dann sähe’s halt auch so aus";
+"generating_tip_6" = "Das kann noch 10–30 Sekunden dauern";
+"generating_tip_7" = "Fast fertig — gutes KI-Medium braucht einen Moment!";
 "splash_generated_note" = "Dieses Medium wurde ebenfalls mit dieser App erstellt";
 "effect_detail_upload_photo" = "Foto hochladen";
+"contact_email_optional_placeholder" = "E-Mail (optional)";
+"contact_email_invalid" = "Bitte gib eine gültige E-Mail-Adresse ein";

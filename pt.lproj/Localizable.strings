@@ -74,11 +74,11 @@
 "network_connection_lost" = "A conexão caiu. Verifique a internet e tente novamente";
 "server_error" = "Erro no servidor. Tente mais tarde";
 "onboarding_step1_title" = "Create AI Videos";
-"onboarding_step1_desc" = "Generate video and photo results from prompts and effects in seconds";
+"onboarding_step1_desc" = "Gere vídeos e fotos com um prompt ou use efeitos prontos";
 "onboarding_step2_title" = "Use Viral Effects";
-"onboarding_step2_desc" = "Pick an effect, upload a photo and let AI create the result";
-"onboarding_step3_title" = "Save Your Results";
-"onboarding_step3_desc" = "Keep your generated videos and photos in the library";
+"onboarding_step2_desc" = "Escolha um efeito, envie uma foto — a IA faz o resto por você";
+"onboarding_step3_title" = "Compartilhe com amigos";
+"onboarding_step3_desc" = "Publique no Instagram, mande para amigos e divirta-se";
 "male" = "Masculino";
 "female" = "Feminino";
 "result" = "Resultado";
@@ -178,6 +178,9 @@
 "per_year" = "por ano";
 "per_week" = "por semana";
 "per_month" = "por mês";
+"paywall_plan_annual" = "Anual";
+"paywall_plan_monthly" = "Mensal";
+"paywall_plan_weekly" = "Semanal";
 "save_75_percent" = "Economize 75%";
 "save" = "Salvar";
 "subscribe_for" = "Assinar por";
@@ -306,11 +309,13 @@
 
 // Generating overlay tips
 "generating_tip_1" = "A IA está criando seu conteúdo…";
-"generating_tip_2" = "Compondo movimento, luz e detalhes…";
-"generating_tip_3" = "Costuma levar de 10 a 30 segundos";
+"generating_tip_2" = "Compondo luz, cor e detalhes…";
+"generating_tip_3" = "Os pixels alongam e os shaders fofocam — faz parte do plano";
 "generating_tip_4" = "Ajustando cada detalhe do seu design…";
-"generating_tip_5" = "Quase lá — um bom resultado com IA vale a espera!";
-"generating_tip_6" = "Os pixels alongam e os shaders fofocam — faz parte do plano";
-"generating_tip_7" = "Dava pra correr — mas aí ficaria parecendo corrida";
+"generating_tip_5" = "Dava pra correr — mas aí ficaria parecendo corrida";
+"generating_tip_6" = "Isso pode levar mais 10 a 30 segundos";
+"generating_tip_7" = "Quase lá — um bom resultado com IA vale a espera!";
 "splash_generated_note" = "Este conteúdo também foi gerado neste app";
 "effect_detail_upload_photo" = "Enviar foto";
+"contact_email_optional_placeholder" = "E-mail (opcional)";
+"contact_email_invalid" = "Insere um e-mail válido";

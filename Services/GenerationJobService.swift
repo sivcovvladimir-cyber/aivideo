@@ -76,6 +76,7 @@ final class GenerationJobService: ObservableObject {
     private var skipDirectDetailAfterSuccess = false
 
     private let api = PixVerseAPIService.shared
+    private let billing = GenerationBillingService.shared
     private var activeTask: Task<Void, Never>?
     /// v5: у `promptPhoto` `aspectRatio` опционален (i2i без явного aspect — провайдер по умолчанию `auto`).
     /// v6: `LibraryGenerationJob.id` — монотонный `Int` (не UUID).
@@ -110,8 +111,7 @@ final class GenerationJobService: ObservableObject {
             return
         }
 
-        guard AppState.shared.spendTokensForGeneration(cost: cost) else {
-            AppState.shared.presentInsufficientTokensGate(requiredTokens: cost)
+        guard billing.reserveOrPresentPaywall(cost: cost) else {
             return
         }
 
@@ -215,7 +215,7 @@ final class GenerationJobService: ObservableObject {
             removeJob(jobId)
             finishSuccess(media: media)
         } catch {
-            AppState.shared.refundTokensForGeneration(cost: cost)
+            billing.refund(cost: cost)
             await Self.pushGenerationLog(
                 clientJobId: jobId,
                 request: request,
@@ -280,7 +280,7 @@ final class GenerationJobService: ObservableObject {
             removeJob(job.id)
             finishSuccess(media: media)
         } catch {
-            AppState.shared.refundTokensForGeneration(cost: job.cost)
+            billing.refund(cost: job.cost)
             await Self.pushGenerationLog(
                 clientJobId: job.id,
                 request: job.request,

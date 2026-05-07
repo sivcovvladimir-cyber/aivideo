@@ -26,7 +26,6 @@ enum SupabaseSessionBootstrap {
         }
         log("bootstrap: старт loadSessionSnapshot (base \(supabaseURL.prefix(48))…)")
         let effects = try await fetchEffectsHome()
-        log("bootstrap: OK — секций \(effects.sections.count), hero=\(effects.hero != nil)")
         return effects
     }
 
@@ -58,7 +57,6 @@ enum SupabaseSessionBootstrap {
             let payload = rawPayload.mergingHeroPreviewMediaFromSections()
             let snippet = String(data: data.prefix(1200), encoding: .utf8) ?? ""
             log("get_effects_home HTTP \(http.statusCode) bytes=\(data.count) bodyPrefix=\(snippet)")
-            payload.debugLogSummary(source: "supabase-rpc:get_effects_home", prefix: "[Supabase]")
             return payload
         } catch {
             let snippet = String(data: data.prefix(800), encoding: .utf8) ?? ""

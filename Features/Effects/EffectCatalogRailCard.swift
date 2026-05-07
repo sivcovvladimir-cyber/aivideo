@@ -11,13 +11,75 @@ enum EffectCatalogCardLayout: Equatable {
 struct EffectCatalogRailCard: View {
     let item: EffectsHomeItem
     let layout: EffectCatalogCardLayout
+    let allowsMotionPreview: Bool
+    let showsPosterBeforeMotion: Bool
+    let autoplayEnabled: Bool
+    let forcePauseMotion: Bool
+    let onVisibilityChanged: ((Bool) -> Void)?
     let onTap: () -> Void
 
-    @State private var cellOnScreen = false
+    @State private var isVisibleInHierarchy = true
     @Environment(\.scenePhase) private var scenePhase
 
+    init(
+        item: EffectsHomeItem,
+        layout: EffectCatalogCardLayout,
+        allowsMotionPreview: Bool,
+        showsPosterBeforeMotion: Bool,
+        autoplayEnabled: Bool = true,
+        forcePauseMotion: Bool = false,
+        onVisibilityChanged: ((Bool) -> Void)? = nil,
+        onTap: @escaping () -> Void
+    ) {
+        self.item = item
+        self.layout = layout
+        self.allowsMotionPreview = allowsMotionPreview
+        self.showsPosterBeforeMotion = showsPosterBeforeMotion
+        self.autoplayEnabled = autoplayEnabled
+        self.forcePauseMotion = forcePauseMotion
+        self.onVisibilityChanged = onVisibilityChanged
+        self.onTap = onTap
+    }
+
+    private var sessionScope: String {
+        switch layout {
+        case .railFixed142x190:
+            return "home-rail"
+        case .gridTwoColumnCell:
+            return "browse-grid"
+        }
+    }
+
+    private var mediaSessionID: String {
+        "\(sessionScope)|preset:\(item.preset.id)"
+    }
+
+    private var motionURLString: String? {
+        item.preset.previewVideoURL?.absoluteString
+    }
+
+    private var shouldPassMotionURLToPreview: Bool {
+        allowsMotionPreview && motionURLString != nil
+    }
+
     private var runVideo: Bool {
-        cellOnScreen && scenePhase == .active
+        allowsMotionPreview &&
+        motionURLString != nil &&
+        autoplayEnabled &&
+        isVisibleInHierarchy &&
+        scenePhase == .active &&
+        !forcePauseMotion
+    }
+
+    /// Если autoplay для карточки выключен лимитом, всё равно прогреваем motion-слой в paused режиме:
+    /// это убирает «рывок» при последующем включении воспроизведения.
+    private var preloadVideoWhenPaused: Bool {
+        allowsMotionPreview &&
+        motionURLString != nil &&
+        !autoplayEnabled &&
+        isVisibleInHierarchy &&
+        scenePhase == .active &&
+        !forcePauseMotion
     }
 
     private var debugContext: String {
@@ -38,10 +100,12 @@ struct EffectCatalogRailCard: View {
         .appPlainButtonStyle()
         .contentShape(Rectangle())
         .onAppear {
-            cellOnScreen = true
+            isVisibleInHierarchy = true
+            onVisibilityChanged?(true)
         }
         .onDisappear {
-            cellOnScreen = false
+            isVisibleInHierarchy = false
+            onVisibilityChanged?(false)
         }
     }
 
@@ -66,6 +130,10 @@ struct EffectCatalogRailCard: View {
     /// Заголовок и градиент привязаны к **слоту плитки**, а не к внутреннему размеру медиа: `WKWebView`/постер не должны раздувать область оверлея (иначе текст пропадает или уезжает).
     private func catalogTile(width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
+            // Фикс стабильной кликабельности: прозрачная подложка + contentShape дают Button
+            // явную hit-area на весь слот карточки независимо от того, какие дочерние слои отключили hit-testing.
+            Color.clear
+
             catalogPreviewMedia
                 .frame(width: width, height: height)
                 .clipped()
@@ -74,19 +142,36 @@ struct EffectCatalogRailCard: View {
                 .frame(width: width, height: height, alignment: .bottomLeading)
         }
         .frame(width: width, height: height)
+        .contentShape(Rectangle())
     }
 
     private var catalogPreviewMedia: some View {
         PreviewMediaView(
             imageURL: item.preset.previewImageURL,
             image: item.preset.bundledPreviewUIImage(),
-            motionURL: item.preset.previewVideoURL?.absoluteString,
+            motionURL: shouldPassMotionURLToPreview ? motionURLString : nil,
             shouldPlayMotion: runVideo,
-            debugLogTag: "[effects-preview]",
+            preloadsMotionWhenHidden: preloadVideoWhenPaused,
+            // Для main/view-all suppress постера разрешаем только когда motion превью вообще включён флагом конфига.
+            showsLoadingIndicator: false,
+            prefersMotionWhenCached: allowsMotionPreview,
+            showsPosterBeforeMotion: showsPosterBeforeMotion,
+            debugLogTag: nil,
             debugContext: debugContext
         ) {
-            AppTheme.Colors.cardBackground
+            // Как на detail: сначала лоадер, пока тянется remote-постер; затем картинка и поверх — видео (bundled-картинка без URL показывается сразу, без этого шага).
+            if item.preset.previewImageURL != nil {
+                ZStack {
+                    AppTheme.Colors.cardBackground
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.contentCircularLoaderTint))
+                }
+            } else {
+                AppTheme.Colors.cardBackground
+            }
         }
+        // Важно оставить сам PreviewMediaView hit-testable как часть label у Button:
+        // если выключить hit-testing на всём слое, SwiftUI может потерять tappable-область карточки в ScrollView/Lazy*.
     }
 
     private var catalogTitleOverlay: some View {
@@ -110,12 +195,10 @@ struct EffectCatalogRailCard: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .padding(10)
-                .onAppear {
-                    print("[effects-preview] EffectCatalogRailCard titleOverlay appear context=\(debugContext)")
-                }
         }
         .allowsHitTesting(false)
     }
+
 }
 
 private struct EffectCatalogCardChrome: ViewModifier {

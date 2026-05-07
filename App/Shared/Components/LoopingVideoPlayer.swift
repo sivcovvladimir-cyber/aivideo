@@ -4,17 +4,36 @@ import AVKit
 struct LoopingVideoPlayer: View {
     let videoName: String
     let videoExtension: String
-    
+    /// Явный файл в bundle/temp (например MP4 из Data Catalog); если `nil` — ищем `videoName`.`videoExtension` в `Bundle.main`.
+    let playbackURL: URL?
+    /// Громкость зацикленного asset (0…1, mix/volume); по умолчанию 0.07 (7%).
+    let playbackVolume: Float
+
     @State private var player: AVQueuePlayer?
     @State private var videoAspectRatio: CGFloat = 16.0/9.0
     @State private var playerLooper: AVPlayerLooper?
     @State private var currentVideoName: String = ""
-    
 
-    
-    init(videoName: String, videoExtension: String = "mp4") {
+    init(videoName: String, videoExtension: String = "mp4", playbackVolume: Float = 0.07) {
         self.videoName = videoName
         self.videoExtension = videoExtension
+        self.playbackURL = nil
+        self.playbackVolume = playbackVolume
+    }
+
+    init(playbackURL: URL, playbackVolume: Float = 0.07) {
+        self.videoName = ""
+        self.videoExtension = playbackURL.pathExtension.lowercased().isEmpty ? "mp4" : playbackURL.pathExtension.lowercased()
+        self.playbackURL = playbackURL
+        self.playbackVolume = playbackVolume
+    }
+
+    private var resolvedVideoURL: URL? {
+        playbackURL ?? Bundle.main.url(forResource: videoName, withExtension: videoExtension)
+    }
+
+    private var playbackIdentity: String {
+        playbackURL?.absoluteString ?? "\(videoName).\(videoExtension)"
     }
     
     var body: some View {
@@ -32,7 +51,7 @@ struct LoopingVideoPlayer: View {
                     .onAppear {
                         setupPlayer()
                     }
-                    .onChange(of: videoName) { _, _ in
+                    .onChange(of: playbackIdentity) { _, _ in
                         setupPlayer()
                     }
                     .allowsHitTesting(false) // Отключаем взаимодействие с плеером
@@ -42,16 +61,16 @@ struct LoopingVideoPlayer: View {
     }
     
     private func setupPlayer() {
-        // Если видео не изменилось, не делаем ничего
-        if currentVideoName == videoName {
+        if currentVideoName == playbackIdentity {
             return
         }
-        
-        guard let videoURL = Bundle.main.url(forResource: videoName, withExtension: videoExtension) else {
+
+        guard let videoURL = resolvedVideoURL else {
             return
         }
         
         let playerItem = AVPlayerItem(url: videoURL)
+        applyItemVolumeMix(playerItem, volume: playbackVolume)
         // Локальный файл из Bundle: не ждём `load(.isPlayable)` перед показом — иначе заметная задержка ~0.3–0.6 с до первого кадра.
         if let existingPlayer = player {
             existingPlayer.replaceCurrentItem(with: playerItem)
@@ -61,8 +80,11 @@ struct LoopingVideoPlayer: View {
             player = queue
             playerLooper = AVPlayerLooper(player: queue, templateItem: playerItem)
         }
+        let v = min(1, max(0, playbackVolume))
+        player?.isMuted = v < 0.0001
+        player?.volume = v
         player?.play()
-        currentVideoName = videoName
+        currentVideoName = playbackIdentity
 
         Task {
             _ = try? await playerItem.asset.load(.isPlayable)
@@ -80,6 +102,17 @@ struct LoopingVideoPlayer: View {
                 }
             }
         }
+    }
+
+    /// Дублируем ограничение громкости на уровне `AVPlayerItem.audioMix`: в некоторых конфигурациях `VideoPlayer` + `AVQueuePlayer` это заметно стабильнее, чем только `player.volume`.
+    private func applyItemVolumeMix(_ item: AVPlayerItem, volume rawVolume: Float) {
+        guard let track = item.asset.tracks(withMediaType: .audio).first else { return }
+        let v = min(1, max(0, rawVolume))
+        let params = AVMutableAudioMixInputParameters(track: track)
+        params.setVolume(v, at: .zero)
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = [params]
+        item.audioMix = mix
     }
     
     // MARK: - Static Helper Methods

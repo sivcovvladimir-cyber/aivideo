@@ -32,28 +32,57 @@ private enum PaywallHeroLayout {
     }
 }
 
-// Верх paywall: предпочитаем локальное зацикленное видео `paywall.mp4`/`paywall.mov` в Bundle; иначе анимированный WebP из Data Set.
+// Верх paywall: `paywall.mp4|mov` в Copy Bundle Resources; иначе MP4/MOV в Data Catalog (`NSDataAsset`); иначе WebP в том же ассете (не путаем с видео по сигнатуре `ftyp`).
 private enum PaywallHeroTopMedia {
-    static let videoURL: URL? = Bundle.main.url(forResource: "paywall", withExtension: "mp4")
-        ?? Bundle.main.url(forResource: "paywall", withExtension: "mov")
-
-    static var videoExtension: String {
-        (videoURL?.pathExtension.lowercased() == "mov") ? "mov" : "mp4"
-    }
-
-    static let webpData: Data? = NSDataAsset(name: "paywall")?.data
+    private static let rawDataCatalogData: Data? = NSDataAsset(name: "paywall")?.data
         ?? NSDataAsset(name: "Paywall/paywall")?.data
 
-    static let webpImage: UIImage? = {
+    private static var cachedDataCatalogVideoFileURL: URL?
+
+    /// Воспроизводимый URL: свободный файл в bundle или временная копия из Data Catalog (AVPlayer не читает байты ассета напрямую).
+    static var heroVideoPlaybackURL: URL? {
+        if let u = Bundle.main.url(forResource: "paywall", withExtension: "mp4") { return u }
+        if let u = Bundle.main.url(forResource: "paywall", withExtension: "mov") { return u }
+        return materializedMP4FromDataCatalogIfNeeded()
+    }
+
+    private static func materializedMP4FromDataCatalogIfNeeded() -> URL? {
+        if let cached = cachedDataCatalogVideoFileURL,
+           FileManager.default.fileExists(atPath: cached.path) {
+            return cached
+        }
+        guard let data = rawDataCatalogData, dataLooksLikeMP4OrMOV(data) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("paywall_hero_from_datacatalog.mp4")
+        do {
+            try data.write(to: url, options: .atomic)
+            cachedDataCatalogVideoFileURL = url
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private static func dataLooksLikeMP4OrMOV(_ data: Data) -> Bool {
+        guard data.count > 12 else { return false }
+        return data.subdata(in: 4 ..< 8) == Data([0x66, 0x74, 0x79, 0x70])
+    }
+
+    /// Данные для WK WebP: только если это не контейнер MP4/MOV в том же Data Set.
+    static var webpData: Data? {
+        guard let d = rawDataCatalogData, !dataLooksLikeMP4OrMOV(d) else { return nil }
+        return d
+    }
+
+    static var webpImage: UIImage? {
         guard let data = webpData else { return nil }
         return UIImage(data: data)
-    }()
+    }
 
-    static var hasHero: Bool { videoURL != nil || webpData != nil }
+    static var hasHero: Bool { heroVideoPlaybackURL != nil || webpData != nil }
 
     /// Та же геометрия, что у онбординга/видео: доля высоты экрана от aspect ratio контента.
     static func heroFrameHeight() -> CGFloat {
-        if let url = videoURL {
+        if let url = heroVideoPlaybackURL {
             let asset = AVURLAsset(url: url)
             let tracks = asset.tracks(withMediaType: .video)
             guard let track = tracks.first else {
@@ -121,6 +150,14 @@ private struct AnimatedPaywallWebPView: UIViewRepresentable {
 }
 
 struct PaywallView: View {
+    /// UI-контент пейвола больше не читается из `paywall_config.json`: локальный JSON содержит только логику.
+    private let standardPaywallFeatureKeys = [
+        "feature_premium_styles",
+        "feature_hd_quality",
+        "feature_no_watermarks",
+        "feature_priority_processing",
+        "feature_advanced_editing"
+    ]
     /// Если true — закрытие не меняет `currentScreen`, только убирает презентацию (sheet или оверлей).
     var closeOnlyDismissesSheet: Bool = false
     /// Оверлей из `RootView`: закрытие без `Environment.dismiss`, предыдущий экран остаётся под пейволом.
@@ -206,10 +243,11 @@ struct PaywallView: View {
                 // Main content: GeometryReader — корректный `safeAreaInsets.bottom` в оверлее; нижний блок игнорирует safe area снизу и добивает отступ как на storecards (key window fallback).
                 GeometryReader { geo in
                 ZStack {
-                    // Hero: `paywall.mp4` / `paywall.mov` в Bundle (зациклено через `LoopingVideoPlayer`), иначе WebP из Data Set.
-                    if PaywallHeroTopMedia.videoURL != nil {
+                    // Hero: MP4/MOV в bundle или в Data Catalog (копия во temp для AVPlayer), иначе WebP из Data Set.
+                    if let heroVideoURL = PaywallHeroTopMedia.heroVideoPlaybackURL {
                         VStack(spacing: 0) {
-                            LoopingVideoPlayer(videoName: "paywall", videoExtension: PaywallHeroTopMedia.videoExtension)
+                            // Paywall hero держим на 7% громкости для единообразия с остальными экранами.
+                            LoopingVideoPlayer(playbackURL: heroVideoURL, playbackVolume: 0.07)
                                 .frame(height: PaywallHeroTopMedia.heroFrameHeight())
                                 .mask(
                                     LinearGradient(
@@ -310,9 +348,7 @@ struct PaywallView: View {
                         
                         VStack(spacing: 16) {
                             // Заголовок + карусель только для стандартного paywall с подписками.
-                            if paywallCache.currentPlacementTier == .standard,
-                               let config = paywallCache.paywallConfig,
-                               config.ui.carouselAutoScroll {
+                            if paywallCache.currentPlacementTier == .standard {
                                 VStack(spacing: 8) {
                                     Text(getLocalizedTitle())
                                         .font(AppTheme.Typography.title)
@@ -322,8 +358,8 @@ struct PaywallView: View {
                                         .padding(.horizontal, 20)
                                     
                                     TabView(selection: $currentCarouselIndex) {
-                                        ForEach(0..<config.getLocalizedFeatures().count, id: \.self) { index in
-                                            Text(config.getLocalizedFeatures()[index])
+                                        ForEach(0..<standardPaywallFeatureKeys.count, id: \.self) { index in
+                                            Text(standardPaywallFeatureKeys[index].localized)
                                                 .font(AppTheme.Typography.body)
                                                 .foregroundColor(PaywallPlanTileChrome.title)
                                                 .multilineTextAlignment(.center)
@@ -335,7 +371,7 @@ struct PaywallView: View {
                                     .frame(height: 24)
                                     .onReceive(timer) { _ in
                                         withAnimation(.easeInOut(duration: 0.5)) {
-                                            currentCarouselIndex = (currentCarouselIndex + 1) % config.getLocalizedFeatures().count
+                                            currentCarouselIndex = (currentCarouselIndex + 1) % standardPaywallFeatureKeys.count
                                         }
                                     }
                                     .padding(.horizontal, 24)
@@ -691,15 +727,29 @@ struct PaywallView: View {
             isLoadingConfig = false
             selectedPlan = paywallCache.getDefaultSelectedPlanIndex()
             logPaywallDisplaySnapshot("after instant cache")
-            // Всё равно запускаем фоновое обновление из Adapty, чтобы
-            // устаревшие/кривые данные заменились актуальными
-            paywallCache.loadAndCachePaywallData { success in
-                DispatchQueue.main.async {
-                    print("[paywall] PaywallView.loadPaywallData: фоновое обновление завершено success=\(success)")
-                    if success {
-                        // Данные обновились — обновляем выбранный план
+            // Двухфазный refresh: сначала быстрый cache-first, затем принудительный revalidate из сети.
+            Task {
+                let warmSuccess = await paywallCache.loadAndCachePaywallDataAsync(
+                    forceRefresh: false,
+                    updatesLoadingIndicator: false
+                )
+                await MainActor.run {
+                    print("[paywall] PaywallView.loadPaywallData: фоновый cache-first завершён success=\(warmSuccess)")
+                    if warmSuccess {
                         self.selectedPlan = self.paywallCache.getDefaultSelectedPlanIndex()
-                        self.logPaywallDisplaySnapshot("after background refresh")
+                        self.logPaywallDisplaySnapshot("after background cache-first refresh")
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                let forceSuccess = await paywallCache.loadAndCachePaywallDataAsync(
+                    forceRefresh: true,
+                    updatesLoadingIndicator: false
+                )
+                await MainActor.run {
+                    print("[paywall] PaywallView.loadPaywallData: фоновый force-refresh завершён success=\(forceSuccess)")
+                    if forceSuccess {
+                        self.selectedPlan = self.paywallCache.getDefaultSelectedPlanIndex()
+                        self.logPaywallDisplaySnapshot("after background force refresh")
                     }
                 }
             }
@@ -724,7 +774,7 @@ struct PaywallView: View {
         if paywallCache.currentPlacementTier == .proUpsell {
             return "need_more_generations".localized
         }
-        return paywallCache.paywallConfig?.getLocalizedTitle() ?? "upgrade_to_pro".localized
+        return "upgrade_to_pro".localized
     }
     
     private func getLocalizedSubtitle() -> String {
@@ -740,12 +790,38 @@ struct PaywallView: View {
            let count = paywallCache.generationLimit(for: product.vendorProductId, title: product.localizedTitle) {
             return "pack_get_format".localized(with: count)
         }
+        // Для подписок используем единые локализованные названия, чтобы UI не зависел от store title.
+        if let cadence = subscriptionCadence(for: product) {
+            switch cadence {
+            case .annual: return "paywall_plan_annual".localized
+            case .monthly: return "paywall_plan_monthly".localized
+            case .weekly: return "paywall_plan_weekly".localized
+            }
+        }
         return product.localizedTitle
+    }
+
+    private enum SubscriptionCadence {
+        case annual
+        case monthly
+        case weekly
+    }
+
+    private func subscriptionCadence(for product: ProductInfo) -> SubscriptionCadence? {
+        guard !isPackProduct(product) else { return nil }
+        if let period = product.subscriptionPeriod?.lowercased() {
+            if period.contains("year") { return .annual }
+            if period.contains("month") { return .monthly }
+            if period.contains("week") { return .weekly }
+        }
+        let id = product.vendorProductId.lowercased()
+        if id.contains("annual") || id.contains("year") { return .annual }
+        if id.contains("monthly") || id.contains("month") { return .monthly }
+        if id.contains("weekly") || id.contains("week") { return .weekly }
+        return nil
     }
     
     private func getProductSubtitle(_ product: ProductInfo) -> String {
-        let showSavings = paywallCache.paywallConfig?.logic.showSavingsPercentage ?? true
-        
         if product.isTrial {
             if let trialPeriod = product.trialPeriod {
                 return trialPeriod.localized
@@ -754,17 +830,13 @@ struct PaywallView: View {
             }
         } else if isPackProduct(product) {
             // Пакеты: скидка относительно самого дорогого по цене за генерацию
-            if showSavings {
-                let packProducts = getDisplayedProducts()
-                let savings = calculatePackSavingsPercentage(for: product, allPacks: packProducts)
-                if savings > 0 { return "-\(savings)%" }
-            }
+            let packProducts = getDisplayedProducts()
+            let savings = calculatePackSavingsPercentage(for: product, allPacks: packProducts)
+            if savings > 0 { return "-\(savings)%" }
         } else if product.vendorProductId.contains("annual") {
             // Годовая: показываем «Save N%» (локализовано), а не «-N%» — слово помещается и читается лучше.
-            if showSavings {
-                let savings = calculateSavingsPercentage(for: product)
-                if savings > 0 { return "paywall_save_percent_format".localized(with: savings) }
-            }
+            let savings = calculateSavingsPercentage(for: product)
+            if savings > 0 { return "paywall_save_percent_format".localized(with: savings) }
         }
         return ""
     }
@@ -790,8 +862,8 @@ struct PaywallView: View {
     }
     
     private func shouldShowMostPopularBadge(for product: ProductInfo, at index: Int) -> Bool {
-        guard let config = paywallCache.paywallConfig else { return false }
-        return config.ui.showMostPopularBadge && index == config.logic.defaultSelectedPlanIndex
+        _ = product
+        return index == 0
     }
     
     /// Процент скидки для годовой подписки относительно еженедельной (52 нед).
@@ -964,14 +1036,15 @@ struct PaywallView: View {
         isRestoring = true
         print("[paywall] PaywallView.handleRestore: старт")
         
-        AdaptyService.shared.restorePurchases { result in
+        let expectedIds = Set(paywallCache.productsCache.values.map { $0.vendorProductId })
+        AdaptyService.shared.restorePurchases(expectedProductIds: expectedIds) { result in
             DispatchQueue.main.async {
                 self.isRestoring = false
                 
                 switch result {
-                case .success(let profile):
-                    // Check if the profile has an active subscription
-                    let hasActiveSubscription = profile.accessLevels["premium"]?.isActive == true
+                case .success:
+                    // Проверяем итоговый статус через сервис: там учтены fallback-сценарии после restore.
+                    let hasActiveSubscription = AdaptyService.shared.hasActiveSubscription()
                     print("[paywall] PaywallView.handleRestore: success premiumActive=\(hasActiveSubscription)")
                     if hasActiveSubscription {
                         self.appState.isProUser = true

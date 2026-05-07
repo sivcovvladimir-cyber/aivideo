@@ -21,8 +21,6 @@ struct MediaDetailView: View {
     let customTrailingActionColor: Color
     let customTrailingAction: ((GeneratedImage) -> Void)?
     @EnvironmentObject var appState: AppState
-    @State private var dragOffset: CGFloat = 0
-    @State private var isDragging = false
     @State private var isCurrentImageZoomed = false
     @State private var showDeleteConfirmation = false
     @State private var updatedAllMedia: [GeneratedImage] // Локальная копия для обновления
@@ -129,21 +127,100 @@ struct MediaDetailView: View {
         return updatedAllMedia[currentIndex]
     }
     
-    // Получаем текущее изображение из расширенного массива
-    private var currentExtendedMedia: GeneratedImage {
-        guard internalIndex >= 0 && internalIndex < extendedMedia.count else {
-            return extendedMedia.first!
+    /// Расстояние страницы `extendedMedia` до текущей (для прогрева кэша и AV только в окне ±2 — не монтируем сотни тяжёлых слайдов сразу: `TabView` создаёт страницы лениво).
+    private func galleryNeighborDistance(extendedIndex: Int) -> Int {
+        if !shouldUseCircularGallery {
+            return extendedIndex == currentIndex ? 0 : 999
         }
-        return extendedMedia[internalIndex]
+        return abs(extendedIndex - internalIndex)
     }
 
-    /// Синхронный прогрев кэша в ZoomableImageView только для центрального и соседних слайдов — не грузим главный поток сотнями lookup при открытии.
-    private func isEagerCacheSlide(index: Int) -> Bool {
-        if !shouldUseCircularGallery {
-            return index == currentIndex
+    /// Синхронный прогрев RAM/диска в `ZoomableImageView` только в окне ±2 вокруг активной страницы.
+    private func isEagerCacheSlide(extendedIndex: Int) -> Bool {
+        galleryNeighborDistance(extendedIndex: extendedIndex) <= 2
+    }
+
+    /// После свайпа `TabView`: обновляем реальный `currentIndex` и бесшовное кольцо на дубликатах краёв (как `EffectDetailPresetCarousel`).
+    private func commitGalleryPage(_ newValue: Int) {
+        guard shouldUseCircularGallery else { return }
+        isCurrentImageZoomed = false
+        if newValue == 0 {
+            currentIndex = updatedAllMedia.count - 1
+            jumpGallerySilently(to: updatedAllMedia.count)
+            return
         }
-        if extendedMedia.count <= 1 { return true }
-        return index == internalIndex || index == internalIndex - 1 || index == internalIndex + 1
+        if newValue == extendedMedia.count - 1 {
+            currentIndex = 0
+            jumpGallerySilently(to: 1)
+            return
+        }
+        currentIndex = newValue - 1
+    }
+
+    private func jumpGallerySilently(to target: Int) {
+        DispatchQueue.main.async {
+            isJumping = true
+            internalIndex = target
+            DispatchQueue.main.async {
+                isJumping = false
+            }
+        }
+    }
+
+    /// После удаления/программной смены `currentIndex` подгоняем `internalIndex` под расширенный массив `[last]+items+[first]`.
+    private func alignInternalIndexToCurrent() {
+        guard shouldUseCircularGallery else {
+            internalIndex = 0
+            return
+        }
+        let target = min(max(currentIndex, 0), updatedAllMedia.count - 1) + 1
+        guard internalIndex != target else { return }
+        jumpGallerySilently(to: target)
+    }
+
+    @ViewBuilder
+    private func galleryPageContent(geometry: GeometryProxy, pageIndex: Int, media: GeneratedImage) -> some View {
+        let dist = galleryNeighborDistance(extendedIndex: pageIndex)
+        let isActivePage = !shouldUseCircularGallery || pageIndex == internalIndex
+        ZStack {
+            if media.imageURL.hasPrefix("placeholder-") {
+                let info = placeholderInfo(for: media)
+                Rectangle()
+                    .fill(info.color)
+                    .overlay(
+                        VStack(spacing: 16) {
+                            Image(systemName: info.icon)
+                                .font(.system(size: 60))
+                                .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.8))
+                            Text(info.text)
+                                .font(AppTheme.Typography.headline)
+                                .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.8))
+                        }
+                    )
+                    .aspectRatio(contentMode: .fit)
+            } else if media.isVideo {
+                MediaVideoPlayer(
+                    mediaURL: media.imageURL,
+                    shouldPlay: isActivePage,
+                    preloadsWhenPaused: dist > 0 && dist <= 2,
+                    isMuted: false,
+                    playbackVolumeOverride: 0.07,
+                    usesDiskCache: false,
+                    expandsVideoToIgnoreSafeArea: true
+                )
+            } else {
+                ZoomableImageView(
+                    imageURL: media.imageURL,
+                    eagerSyncFromCache: isEagerCacheSlide(extendedIndex: pageIndex),
+                    onZoomChange: { isZoomed in
+                        if isActivePage {
+                            isCurrentImageZoomed = isZoomed
+                        }
+                    }
+                )
+            }
+        }
+        .frame(width: geometry.size.width, height: geometry.size.height)
     }
 
     var body: some View {
@@ -151,125 +228,34 @@ struct MediaDetailView: View {
             AppTheme.Colors.background
                 .ignoresSafeArea()
             
-            // Main content - full screen media carousel
+            // Карусель: `TabView(.page)` держит в иерархии в основном текущую и соседние страницы (лениво), а не весь `extendedMedia` в одном `HStack` — при большой галерее без этого лагает.
             GeometryReader { geometry in
-                        HStack(spacing: 0) {
-                    ForEach(Array(extendedMedia.enumerated()), id: \.offset) { index, media in
-                                ZStack {
-                            if media.imageURL.hasPrefix("placeholder-") {
-                                        // Placeholder для тестовых данных
-                                let info = placeholderInfo(for: media)
-                                        Rectangle()
-                                            .fill(info.color)
-                                            .overlay(
-                                                VStack(spacing: 16) {
-                                                    Image(systemName: info.icon)
-                                                        .font(.system(size: 60))
-                                                        .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.8))
-                                                    Text(info.text)
-                                                        .font(AppTheme.Typography.headline)
-                                                        .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.8))
-                                                }
-                                            )
-                                            .aspectRatio(contentMode: .fit)
-                                    } else if media.isVideo {
-                                        MediaVideoPlayer(
-                                            mediaURL: media.imageURL,
-                                            shouldPlay: index == (shouldUseCircularGallery ? internalIndex : currentIndex),
-                                            isMuted: false,
-                                            usesDiskCache: false,
-                                            expandsVideoToIgnoreSafeArea: true
-                                        )
-                                    } else {
-                                        // Real image with zoom — синхронный кэш только у видимого слайда (±1), иначе при сотнях Last Results главный поток блокируется в init каждого ZoomableImageView.
-                                        ZoomableImageView(
-                                            imageURL: media.imageURL,
-                                            eagerSyncFromCache: isEagerCacheSlide(index: index),
-                                            onZoomChange: { isZoomed in
-                                                if index == (shouldUseCircularGallery ? internalIndex : currentIndex) {
-                                                    isCurrentImageZoomed = isZoomed
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                .frame(width: geometry.size.width, height: geometry.size.height)
+                Group {
+                    if shouldUseCircularGallery {
+                        TabView(selection: $internalIndex) {
+                            ForEach(Array(extendedMedia.enumerated()), id: \.offset) { pageIndex, media in
+                                galleryPageContent(geometry: geometry, pageIndex: pageIndex, media: media)
+                                    .tag(pageIndex)
                             }
                         }
-                        .offset(x: -CGFloat(shouldUseCircularGallery ? internalIndex : currentIndex) * geometry.size.width + dragOffset)
-                        .animation(isJumping ? nil : .easeOut(duration: 0.2), value: shouldUseCircularGallery ? internalIndex : currentIndex)
-                .gesture(
-                    DragGesture(minimumDistance: 5) // Уменьшили минимальное расстояние
-                        .onChanged { value in
-                            // Проверяем, что изображение не увеличено
-                            if isCurrentImageZoomed {
-                                return // Не обрабатываем свайп если изображение увеличено
-                            }
-                            
-                            // Если только одно изображение, не обрабатываем свайпы
-                            if !shouldUseCircularGallery {
-                                return
-                            }
-                            
-                            // Блокируем свайп-карусели в левой 5% для edge swipe dismiss
-                            let screenWidth = UIScreen.main.bounds.width
-                            let edgeZone = screenWidth * 0.03
-                            if value.startLocation.x <= edgeZone { return }
-                            
-                            let horizontalMovement = abs(value.translation.width)
-                            let verticalMovement = abs(value.translation.height)
-                            
-                            // Уменьшили порог для начала свайпа
-                            if horizontalMovement > 5 && horizontalMovement > verticalMovement {
-                                isDragging = true
-                                dragOffset = value.translation.width
-                                print("🔄 [MediaDetailView] Drag started: offset=\(dragOffset), isDragging=\(isDragging)")
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .scrollDisabled(isCurrentImageZoomed)
+                        .transaction { transaction in
+                            if isJumping {
+                                transaction.disablesAnimations = true
                             }
                         }
-                        .onEnded { value in
-                            // Проверяем, что изображение не увеличено
-                            if isCurrentImageZoomed {
-                                return // Не обрабатываем свайп если изображение увеличено
-                            }
-                            
-                            // Если только одно изображение, не обрабатываем свайпы
-                            if !shouldUseCircularGallery {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    dragOffset = 0
-                                }
-                                return
-                            }
-                            
-                            // Блокируем свайп-карусели в левой 7% для edge swipe dismiss
-                            let screenWidth = UIScreen.main.bounds.width
-                            let edgeZone = screenWidth * 0.07
-                            if value.startLocation.x <= edgeZone { return }
-                            
-                            let threshold: CGFloat = 30 // Уменьшили порог для срабатывания
-                            
-                            if value.translation.width > threshold {
-                                moveToPrevious()
-                            } else if value.translation.width < -threshold {
-                                moveToNext()
-                            } else {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    dragOffset = 0
-                                }
-                            }
-                            
-                            // Сбрасываем флаг перетаскивания после анимации
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                isDragging = false
-                                print("🔄 [MediaDetailView] Drag ended: isDragging=\(isDragging)")
-                            }
+                        .onChange(of: internalIndex) { _, newValue in
+                            commitGalleryPage(newValue)
                         }
-                )
+                    } else if let media = updatedAllMedia.first {
+                        galleryPageContent(geometry: geometry, pageIndex: 0, media: media)
+                    }
+                }
             }
             .clipped()
             .ignoresSafeArea()
-            .onChange(of: currentIndex) { oldValue, newValue in
-                internalIndex = newValue + 1
-            }
 
             // Оверлей: GeometryReader + ignoresSafeArea(.top) — иначе safeAreaInsets.top у контента 0 и полоска статуса нулевой высоты.
             GeometryReader { geo in
@@ -494,14 +480,6 @@ struct MediaDetailView: View {
         .onAppear {
             // View setup when appearing
         }
-        .onChange(of: currentIndex) { _, newIndex in
-            // Reset zoom state when switching images
-            isCurrentImageZoomed = false
-        }
-        .onChange(of: internalIndex) { _, newIndex in
-            // Reset zoom state when switching images in circular gallery
-            isCurrentImageZoomed = false
-        }
         .edgeSwipeDismiss {
             onDismiss()
         }
@@ -576,6 +554,8 @@ struct MediaDetailView: View {
                     withAnimation(.easeOut(duration: 0.3)) {
                         currentIndex = 0
                     }
+                    isCurrentImageZoomed = false
+                    alignInternalIndexToCurrent()
                 } else {
                     // Если осталось несколько медиа - переходим к предыдущему или следующему
                     print("📱 Multiple media items left, navigating to next/previous")
@@ -587,10 +567,12 @@ struct MediaDetailView: View {
                         // Иначе остаемся на том же индексе (массив сдвинулся)
                         newIndex = currentIndex
                     }
-                    
+
                     withAnimation(.easeOut(duration: 0.3)) {
                         currentIndex = newIndex
                     }
+                    isCurrentImageZoomed = false
+                    alignInternalIndexToCurrent()
                 }
             } else {
                 print("❌ Delete failed: \(error ?? "Unknown error")")
@@ -688,63 +670,6 @@ struct MediaDetailView: View {
         onDismiss()
     }
     
-    // MARK: - Кольцевая галерея
-    private func moveToNext() {
-        // Проверяем, что у нас больше одного изображения
-        guard shouldUseCircularGallery else { return }
-        
-        // Сначала выполняем анимацию перехода
-        withAnimation(.easeOut(duration: 0.2)) {
-            internalIndex += 1
-            dragOffset = 0
-        }
-        
-        // Проверяем, не дошли ли мы до последнего дублированного элемента
-        if internalIndex == extendedMedia.count - 1 {
-            // Перепрыгиваем на первый реальный элемент без анимации после завершения анимации
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isJumping = true
-                internalIndex = 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    currentIndex = 0
-                    isJumping = false
-                }
-            }
-        } else {
-            // Обновляем currentIndex только для обычных переходов
-            let newCurrentIndex = internalIndex - 1
-            currentIndex = newCurrentIndex
-        }
-    }
-    
-    private func moveToPrevious() {
-        // Проверяем, что у нас больше одного изображения
-        guard shouldUseCircularGallery else { return }
-        
-        // Сначала выполняем анимацию перехода
-        withAnimation(.easeOut(duration: 0.2)) {
-            internalIndex -= 1
-            dragOffset = 0
-        }
-        
-        // Проверяем, не дошли ли мы до первого дублированного элемента
-        if internalIndex == 0 {
-            // Перепрыгиваем на последний реальный элемент без анимации после завершения анимации
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isJumping = true
-                internalIndex = updatedAllMedia.count
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    currentIndex = updatedAllMedia.count - 1
-                    isJumping = false
-                }
-            }
-        } else {
-            // Обновляем currentIndex только для обычных переходов
-            let newCurrentIndex = internalIndex - 1
-            currentIndex = newCurrentIndex
-        }
-    }
-
     /// Те же правила разрешения имён, что и `IconView` / storecards (`Star`, `Star Fill`, …) — иначе `Star Fill` уходит в невалидный `Image(systemName:)`.
     @ViewBuilder
     private func iconImage(named: String, color: Color, size: CGFloat) -> some View {

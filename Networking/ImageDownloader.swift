@@ -210,7 +210,9 @@ public class ImageDownloader: ImageDownloaderProtocol {
     public func downloadImage(from url: String, effectPreviewLogTag: String? = nil, completion: @escaping (Result<String, NetworkError>) -> Void) {
         func elog(_ message: String) {
             if let tag = effectPreviewLogTag {
-                print("\(tag) ImageDownloader \(message)")
+                // print("\(tag) ImageDownloader \(message)")
+                _ = tag
+                _ = message
             }
         }
 
@@ -234,25 +236,25 @@ public class ImageDownloader: ImageDownloaderProtocol {
             return
         }
         
-        // Проверяем кэш на диске для remote изображений
-        let cachedPath = diskCachePath(for: url)
-        if fileManager.fileExists(atPath: cachedPath.path) {
-            elog("disk file EXISTS path.suffix=\(String(cachedPath.path.suffix(64)))")
-            // Проверяем, что кэшированный файл можно прочитать как изображение
-            if let diskImage = UIImage(contentsOfFile: cachedPath.path) {
-                elog("disk UIImage OK size=\(diskImage.size); warming memoryCache key=fullURLString")
-                // Тот же ключ, что у `getCachedImage(from:)` — иначе после холодного старта RAM пустой и превью не подхватывается с диска.
-                let memKey = NSString(string: url)
-                memoryCache.setObject(diskImage, forKey: memKey)
-                completion(.success(cachedPath.path))
-            } else {
-                elog("disk file UNREADABLE as UIImage → remove and re-fetch")
-                print("⚠️ [ImageDownloader] Corrupted cached file, removing: \(cachedPath.path)")
-                try? fileManager.removeItem(atPath: cachedPath.path)
-                // Продолжаем с загрузкой
-                downloadAndCache(url: url, effectPreviewLogTag: effectPreviewLogTag, completion: completion)
+        // Проверяем кэш на диске для remote изображений (и legacy full URL, и стабильный путь без query).
+        for cachedPath in diskCachePaths(for: url) {
+            if fileManager.fileExists(atPath: cachedPath.path) {
+                elog("disk file EXISTS path.suffix=\(String(cachedPath.path.suffix(64)))")
+                if let diskImage = UIImage(contentsOfFile: cachedPath.path) {
+                    elog("disk UIImage OK size=\(diskImage.size); warming memoryCache key=fullURLString+normalized")
+                    let memKey = NSString(string: url)
+                    let normalizedMemKey = NSString(string: normalizedRemoteMemoryCacheKey(for: url))
+                    memoryCache.setObject(diskImage, forKey: memKey)
+                    memoryCache.setObject(diskImage, forKey: normalizedMemKey)
+                    Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
+                    completion(.success(cachedPath.path))
+                    return
+                } else {
+                    elog("disk file UNREADABLE as UIImage → remove and continue")
+                    print("⚠️ [ImageDownloader] Corrupted cached file, removing: \(cachedPath.path)")
+                    try? fileManager.removeItem(atPath: cachedPath.path)
+                }
             }
-            return
         }
 
         elog("no disk file → downloadAndCache network")
@@ -267,22 +269,25 @@ public class ImageDownloader: ImageDownloaderProtocol {
         }
         
         let key = NSString(string: url)
+        let normalizedKey = NSString(string: normalizedRemoteMemoryCacheKey(for: url))
         
         // Быстрая проверка memory cache
-        if memoryCache.object(forKey: key) != nil {
+        if memoryCache.object(forKey: key) != nil || memoryCache.object(forKey: normalizedKey) != nil {
             return
         }
         
         // Проверяем disk cache в фоне
         DispatchQueue.global(qos: .background).async {
-            let cachedPath = self.diskCachePath(for: url)
-            if self.fileManager.fileExists(atPath: cachedPath.path),
-               let image = UIImage(contentsOfFile: cachedPath.path) {
-                DispatchQueue.main.async {
-                    self.memoryCache.setObject(image, forKey: key)
-                    self.successfulCacheHits += 1
+            for cachedPath in self.diskCachePaths(for: url) {
+                if self.fileManager.fileExists(atPath: cachedPath.path),
+                   let image = UIImage(contentsOfFile: cachedPath.path) {
+                    DispatchQueue.main.async {
+                        self.memoryCache.setObject(image, forKey: key)
+                        self.memoryCache.setObject(image, forKey: normalizedKey)
+                        self.successfulCacheHits += 1
+                    }
+                    return
                 }
-                return
             }
             
             // Скачиваем если нет в кэше (без блокировки)
@@ -293,6 +298,7 @@ public class ImageDownloader: ImageDownloaderProtocol {
                     if let image = UIImage(contentsOfFile: localPath) {
                         DispatchQueue.main.async {
                             self.memoryCache.setObject(image, forKey: key)
+                            self.memoryCache.setObject(image, forKey: normalizedKey)
                         }
                     }
                 case .failure(let error):
@@ -302,6 +308,23 @@ public class ImageDownloader: ImageDownloaderProtocol {
         }
     }
     
+    /// Для WebP/GIF motion превью каталога: байты лежат в `ImageDownloader`, а `EffectPreviewVideoDiskCache.hasCachedVideo` для raster намеренно false — проверяем RAM/диск без обязательного декодирования в UIImage.
+    public func hasRemoteImagePayloadCached(for urlString: String) -> Bool {
+        guard urlString.hasPrefix("http") else { return false }
+        let key = NSString(string: urlString)
+        let normalizedKey = NSString(string: normalizedRemoteMemoryCacheKey(for: urlString))
+        if memoryCache.object(forKey: key) != nil { return true }
+        if memoryCache.object(forKey: normalizedKey) != nil { return true }
+        for cachedPath in diskCachePaths(for: urlString) {
+            if let attrs = try? fileManager.attributesOfItem(atPath: cachedPath.path),
+               let size = attrs[.size] as? NSNumber,
+               size.int64Value > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
     public func getCachedImage(from url: String) -> UIImage? {
         // Для локальных файлов возвращаем nil - пусть CachedAsyncImage обрабатывает напрямую
         if !url.hasPrefix("http") {
@@ -309,21 +332,29 @@ public class ImageDownloader: ImageDownloaderProtocol {
         }
         
         let key = NSString(string: url)
+        let normalizedKey = NSString(string: normalizedRemoteMemoryCacheKey(for: url))
         
         // Проверяем memory cache
         if let cachedImage = memoryCache.object(forKey: key) {
             successfulCacheHits += 1
             return cachedImage
         }
+        if let cachedImage = memoryCache.object(forKey: normalizedKey) {
+            memoryCache.setObject(cachedImage, forKey: key)
+            successfulCacheHits += 1
+            return cachedImage
+        }
         
         // Проверяем disk cache синхронно для быстрого доступа
-        let cachedPath = diskCachePath(for: url)
-        if fileManager.fileExists(atPath: cachedPath.path),
-           let image = UIImage(contentsOfFile: cachedPath.path) {
-            // Добавляем в memory cache
-            memoryCache.setObject(image, forKey: key)
-            successfulCacheHits += 1
-            return image
+        for cachedPath in diskCachePaths(for: url) {
+            if fileManager.fileExists(atPath: cachedPath.path),
+               let image = UIImage(contentsOfFile: cachedPath.path) {
+                // Добавляем в memory cache под оба ключа, чтобы смена query не ломала мгновенный показ из кэша.
+                memoryCache.setObject(image, forKey: key)
+                memoryCache.setObject(image, forKey: normalizedKey)
+                successfulCacheHits += 1
+                return image
+            }
         }
         
         return nil
@@ -332,9 +363,11 @@ public class ImageDownloader: ImageDownloaderProtocol {
     public func invalidateCachedRemoteImage(for url: String) {
         guard url.hasPrefix("http") else { return }
         memoryCache.removeObject(forKey: NSString(string: url))
-        let cachedPath = diskCachePath(for: url)
-        if fileManager.fileExists(atPath: cachedPath.path) {
-            try? fileManager.removeItem(at: cachedPath)
+        memoryCache.removeObject(forKey: NSString(string: normalizedRemoteMemoryCacheKey(for: url)))
+        for cachedPath in diskCachePaths(for: url) {
+            if fileManager.fileExists(atPath: cachedPath.path) {
+                try? fileManager.removeItem(at: cachedPath)
+            }
         }
     }
     
@@ -427,7 +460,9 @@ public class ImageDownloader: ImageDownloaderProtocol {
     private func downloadAndCache(url: String, effectPreviewLogTag: String?, completion: @escaping (Result<String, NetworkError>) -> Void) {
         func elog(_ message: String) {
             if let tag = effectPreviewLogTag {
-                print("\(tag) ImageDownloader \(message)")
+                // print("\(tag) ImageDownloader \(message)")
+                _ = tag
+                _ = message
             }
         }
 
@@ -490,17 +525,23 @@ public class ImageDownloader: ImageDownloaderProtocol {
                     return
                 }
 
-                elog("UIImage(data:) OK size=\(image.size); memoryCache setObject fullURL; writing disk")
+                elog("UIImage(data:) OK size=\(image.size); memoryCache setObject fullURL+normalized; writing disk")
                 // RAM-ключ = полная строка URL (совпадает с `getCachedImage(from:)` и `CachedAsyncImage`).
                 DispatchQueue.main.async {
                     let memKey = NSString(string: url)
+                    let normalizedMemKey = NSString(string: self.normalizedRemoteMemoryCacheKey(for: url))
                     self.memoryCache.setObject(image, forKey: memKey)
+                    self.memoryCache.setObject(image, forKey: normalizedMemKey)
                 }
 
                 // Сохраняем на диск в фоне
                 let cachedPath = self.diskCachePath(for: url)
                 do {
                     try data.write(to: cachedPath)
+                    let normalizedPath = self.normalizedDiskCachePath(for: url)
+                    if normalizedPath != cachedPath, !self.fileManager.fileExists(atPath: normalizedPath.path) {
+                        try? data.write(to: normalizedPath)
+                    }
                     self.successfulDownloads += 1
                     elog("disk write OK path.suffix=\(String(cachedPath.path.suffix(64)))")
                 } catch {
@@ -509,15 +550,46 @@ public class ImageDownloader: ImageDownloaderProtocol {
                 }
 
                 DispatchQueue.main.async {
+                    Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
                     completion(.success(cachedPath.path))
                 }
             }
         }.resume()
     }
+
+    /// Тот же контракт, что `EffectPreviewVideoDiskCache` → `PreviewMediaView.onReceive(.effectPreviewVideoCacheUpdated)`: raster motion догружается через `ImageDownloader`.
+    private static func postEffectPreviewVideoCacheUpdatedIfRemote(url: String) {
+        guard url.hasPrefix("http") else { return }
+        NotificationCenter.default.post(
+            name: Notification.Name("effectPreviewVideoCacheUpdated"),
+            object: nil,
+            userInfo: ["url": url]
+        )
+    }
     
     private func diskCachePath(for url: String) -> URL {
         let fileName = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? UUID().uuidString
         return cacheDirectory.appendingPathComponent("\(fileName).jpg")
+    }
+
+    /// Стабильный ключ remote-изображения без query/fragment: URL подписи CDN могут меняться между сессиями.
+    private func normalizedRemoteMemoryCacheKey(for urlString: String) -> String {
+        guard var components = URLComponents(string: urlString), components.scheme != nil else {
+            return urlString
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? urlString
+    }
+
+    private func normalizedDiskCachePath(for urlString: String) -> URL {
+        diskCachePath(for: normalizedRemoteMemoryCacheKey(for: urlString))
+    }
+
+    private func diskCachePaths(for urlString: String) -> [URL] {
+        let primary = diskCachePath(for: urlString)
+        let normalized = normalizedDiskCachePath(for: urlString)
+        return primary == normalized ? [primary] : [primary, normalized]
     }
     
     /// Извлекает имя файла из URL (без расширения)

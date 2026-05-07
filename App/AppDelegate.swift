@@ -1,7 +1,9 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseAnalytics
+#if canImport(AppsFlyerLib)
 import AppsFlyerLib
+#endif
 import Adapty
 import UIKit
 

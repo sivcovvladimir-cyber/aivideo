@@ -69,7 +69,9 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     private func log(_ message: String) {
         if let tag = debugLogTag {
-            print("\(tag) CachedAsyncImage \(message)")
+            // print("\(tag) CachedAsyncImage \(message)")
+            _ = tag
+            _ = message
         }
     }
 
@@ -124,25 +126,6 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                 return
             }
             log("runImageLoad HIT but bitmap invalid → invalidateCachedRemoteImage")
-            ImageDownloader.shared.invalidateCachedRemoteImage(for: urlString)
-        }
-
-        // Лёгкий debounce при быстром скролле: не дублируем старый fixed 0.3s и не блокируем второй заход.
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        guard !Task.isCancelled, activeLoadKey == loadKey else {
-            log("runImageLoad cancelled after debounce (key or task)")
-            return
-        }
-
-        if let cachedAfterWait = ImageDownloader.shared.getCachedImage(from: urlString) {
-            if CachedAsyncImagePolicy.isRenderableCachedImage(cachedAfterWait) {
-                log("runImageLoad HIT after debounce")
-                guard activeLoadKey == loadKey else { return }
-                image = cachedAfterWait
-                imageSourceURLString = urlString
-                return
-            }
-            log("runImageLoad HIT after debounce but invalid → invalidate")
             ImageDownloader.shared.invalidateCachedRemoteImage(for: urlString)
         }
 

@@ -114,11 +114,11 @@
 "network_connection_lost" = "Network connection was lost. Please check your internet and try again";
 "server_error" = "Server error. Please try again later";
 "onboarding_step1_title" = "Create AI Videos";
-"onboarding_step1_desc" = "Generate video and photo results from prompts and effects in seconds";
+"onboarding_step1_desc" = "Generate videos and photos from prompts, or use ready-made effects";
 "onboarding_step2_title" = "Use Viral Effects";
-"onboarding_step2_desc" = "Pick an effect, upload a photo and let AI create the result";
-"onboarding_step3_title" = "Save Your Results";
-"onboarding_step3_desc" = "Keep your generated videos and photos in the library";
+"onboarding_step2_desc" = "Pick an effect, upload a photo — AI does the rest for you";
+"onboarding_step3_title" = "Share with friends";
+"onboarding_step3_desc" = "Post to Instagram, send to friends, and just have fun";
 "male" = "Male";
 "female" = "Female";
 "result" = "Result";
@@ -218,6 +218,9 @@
 "per_year" = "per year";
 "per_week" = "per week";
 "per_month" = "per month";
+"paywall_plan_annual" = "Annual";
+"paywall_plan_monthly" = "Monthly";
+"paywall_plan_weekly" = "Weekly";
 "save_75_percent" = "Save 75%";
 "save" = "Save";
 "subscribe_for" = "Subscribe for";
@@ -355,10 +358,12 @@
 
 // Generating overlay tips
 "generating_tip_1" = "AI is crafting your media…";
-"generating_tip_2" = "Composing motion, light and details…";
-"generating_tip_3" = "This usually takes 10–30 seconds";
+"generating_tip_2" = "Composing light, color, and fine detail…";
+"generating_tip_3" = "Pixels are stretching, shaders are gossiping — all part of the plan";
 "generating_tip_4" = "Fine-tuning every detail of your design…";
-"generating_tip_5" = "Almost there — great AI media takes a moment!";
-"generating_tip_6" = "Pixels are stretching, shaders are gossiping — all part of the plan";
-"generating_tip_7" = "We could rush it — but then it would look rushed";
+"generating_tip_5" = "We could rush it — but then it would look rushed";
+"generating_tip_6" = "This may take another 10–30 seconds";
+"generating_tip_7" = "Almost there — great AI media takes a moment!";
 "splash_generated_note" = "This media was also generated with this app";
+"contact_email_optional_placeholder" = "Email (optional)";
+"contact_email_invalid" = "Please enter a valid email";

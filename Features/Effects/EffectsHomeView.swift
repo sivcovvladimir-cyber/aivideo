@@ -3,6 +3,7 @@ import SwiftUI
 struct EffectsHomeView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var paywallCache = PaywallCacheManager.shared
     // Чип токенов в шапке временно отключён — при возврате раскомментируй вместе с `ProStatusBadge` в `topBarActions`.
     // @ObservedObject private var tokenWallet = TokenWalletService.shared
     @State private var heroCarouselIndex = 0
@@ -15,8 +16,48 @@ struct EffectsHomeView: View {
     /// После ручного свайпа TabView: автолисталка молчит 30 с с момента смены слайда (программные смены помечаем отдельно).
     @State private var heroCarouselLastUserInteractionAt: Date?
     @State private var heroCarouselSuppressNextUserInteractionMark = false
+    private let railAutoplayLimit = 3
+    @State private var railVisibleAutoplayQueueBySection: [String: [String]] = [:]
 
     private var payload: EffectsHomePayload? { appState.sessionEffectsHomePayload }
+    private var homePreviewWarmupIdentity: String {
+        guard let payload else { return "none" }
+        let phase = scenePhase == .active ? "active" : "inactive"
+        let heroVideo: String
+        if let hero = payload.hero, hero.items.indices.contains(heroCarouselIndex) {
+            heroVideo = hero.items[heroCarouselIndex].preset.previewVideoURL?.absoluteString ?? "nil"
+        } else {
+            heroVideo = "nil"
+        }
+        return [phase, heroVideo].joined(separator: "|")
+    }
+
+    private var homeTailWarmupIdentity: String {
+        guard let payload else { return "none" }
+        let sectionsKey = payload.sections
+            .map { section in
+                let videos = section.items.compactMap { $0.preset.previewVideoURL?.absoluteString }.joined(separator: ",")
+                let posters = section.items.compactMap { $0.preset.previewImageURL?.absoluteString }.joined(separator: ",")
+                return "\(section.id)|v:\(videos)|p:\(posters)"
+            }
+            .joined(separator: ";")
+        return "home-tail|\(sectionsKey)"
+    }
+
+    private var homeHeroSessionID: String {
+        guard let hero = payload?.hero else { return "none" }
+        return "home-hero|\(hero.sectionId)|\(heroCarouselIndex)"
+    }
+
+    /// Рельсы и «View all»: motion в карточках каталога; по умолчанию выключено в `logic`, Adapty может включить.
+    private var effectsCatalogAllowsMotionPreview: Bool {
+        paywallCache.paywallConfig?.logic.effectsCatalogAllowsMotionPreview ?? false
+    }
+    
+    /// Каталог Effects (main + view all): показывать ли постер до старта motion. Работает только при включённом `effectsCatalogAllowsMotionPreview`.
+    private var effectsCatalogShowPosterBeforeMotion: Bool {
+        paywallCache.paywallConfig?.logic.effectsCatalogShowPosterBeforeMotion ?? false
+    }
 
     /// Данные каталога приходят с сплеша (`ensureSessionRemoteDataAtLaunch`); на этом экране только читаем кэш `AppState`.
     private var showsBootstrapLoading: Bool {
@@ -61,6 +102,13 @@ struct EffectsHomeView: View {
             .themeAware()
             .themeAnimation()
         }
+        .task(id: homePreviewWarmupIdentity) {
+            await prewarmVisibleHomePreviewVideosIfNeeded()
+        }
+        .task(id: homeTailWarmupIdentity) {
+            guard let payload else { return }
+            await EffectsMediaOrchestrator.shared.reevaluateCatalogTailWarmupForHome(payload: payload)
+        }
     }
 
     private var topBarActions: some View {
@@ -68,7 +116,7 @@ struct EffectsHomeView: View {
             Button {
                 appState.currentScreen = .settings
             } label: {
-                Image(systemName: "gearshape")
+                Image(systemName: "gearshape.fill")
                     .font(.system(size: 22, weight: .medium))
                     .foregroundColor(AppTheme.Colors.textPrimary)
             }
@@ -340,7 +388,9 @@ struct EffectsHomeView: View {
                     image: item.preset.bundledPreviewUIImage(),
                     motionURL: item.preset.previewVideoURL?.absoluteString,
                     shouldPlayMotion: playHeroMotion,
-                    debugLogTag: "[effects-preview]",
+                    showsLoadingIndicator: false,
+                    prefersMotionWhenCached: false,
+                    debugLogTag: nil,
                     debugContext: "home-hero id=\(item.preset.id) slug=\(item.preset.slug) title='\(item.preset.title)' index=\(index)",
                     onMotionPlaybackReady: (playHeroMotion && item.preset.previewVideoURL != nil)
                         ? { heroActiveMotionPlaybackReady = true }
@@ -432,10 +482,29 @@ struct EffectsHomeView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
-                    ForEach(section.items) { item in
+                    // Ограничиваем autoplay по фактически видимым карточкам в каждом рельсе:
+                    // новые видимые карточки вытесняют старые из лимита, даже если SwiftUI ещё не прислал `onDisappear`.
+                    ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                        let autoplayKey = "\(item.id)"
                         EffectCatalogRailCard(
                             item: item,
-                            layout: .railFixed142x190
+                            layout: .railFixed142x190,
+                            allowsMotionPreview: effectsCatalogAllowsMotionPreview,
+                            showsPosterBeforeMotion: effectsCatalogShowPosterBeforeMotion,
+                            autoplayEnabled: effectsCatalogAllowsMotionPreview && isRailAutoplayEnabled(
+                                sectionId: section.id,
+                                key: autoplayKey
+                            ),
+                            onVisibilityChanged: { isVisible in
+                                updateRailAutoplayVisibility(
+                                    sectionId: section.id,
+                                    key: autoplayKey,
+                                    isVisible: isVisible
+                                )
+                                if isVisible {
+                                    scheduleCatalogPriorityUpdate(previewVideoURL: item.preset.previewVideoURL)
+                                }
+                            }
                         ) {
                             appState.openEffectDetail(item.preset, carouselPresets: section.items.map(\.preset))
                         }
@@ -443,6 +512,46 @@ struct EffectsHomeView: View {
                 }
             }
         }
+    }
+
+    private func isRailAutoplayEnabled(sectionId: String, key: String) -> Bool {
+        railVisibleAutoplayQueueBySection[sectionId]?.contains(key) ?? false
+    }
+
+    private func updateRailAutoplayVisibility(sectionId: String, key: String, isVisible: Bool) {
+        var queue = railVisibleAutoplayQueueBySection[sectionId] ?? []
+        queue.removeAll { $0 == key }
+        if isVisible {
+            queue.append(key)
+            if queue.count > railAutoplayLimit {
+                queue = Array(queue.suffix(railAutoplayLimit))
+            }
+        }
+        railVisibleAutoplayQueueBySection[sectionId] = queue
+    }
+
+    private func scheduleCatalogPriorityUpdate(previewVideoURL: URL?) {
+        Task {
+            await EffectsMediaOrchestrator.shared.scheduleCatalogCurrentPresetPriority(
+                previewVideoURL: previewVideoURL
+            )
+        }
+    }
+
+    /// Прогрев превью на главной: hero всегда; рельсы с motion при `logic.effectsCatalogAllowsMotionPreview` подгружаются по мере показа.
+    @MainActor
+    private func prewarmVisibleHomePreviewVideosIfNeeded() async {
+        guard let payload else { return }
+        var heroURLString: String?
+        if let hero = payload.hero, hero.items.indices.contains(heroCarouselIndex),
+           let heroURL = hero.items[heroCarouselIndex].preset.previewVideoURL?.absoluteString {
+            heroURLString = heroURL
+        }
+        await EffectsMediaOrchestrator.shared.updateHomeHeroSession(
+            sceneIsActive: scenePhase == .active,
+            heroSessionID: homeHeroSessionID,
+            heroVideoURLString: heroURLString
+        )
     }
 
     private func errorContent(message: String) -> some View {

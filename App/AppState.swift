@@ -50,6 +50,9 @@ final class AppState: ObservableObject {
     @Published private(set) var sessionEffectsHomePayload: EffectsHomePayload?
 
     private var sessionBootstrapTask: Task<Void, Never>?
+    private var paywallPreloadTask: Task<Bool, Never>?
+    private var onboardingHomeWarmupTask: Task<Void, Never>?
+    private var hasHandledFirstDidBecomeActive = false
 
     /// Один полёт на запуск приложения; повторные вызовы ждут тот же `Task`.
     func ensureSessionRemoteDataAtLaunch() async {
@@ -64,7 +67,6 @@ final class AppState: ObservableObject {
             do {
                 let payload = try await SupabaseSessionBootstrap.loadSessionSnapshot()
                 self.sessionEffectsHomePayload = payload
-                payload.debugLogSummary(source: "appstate-session-memory")
                 self.sessionRemoteBootstrapPhase = .ready
                 try? EffectsHomePayloadDiskCache.save(payload)
             } catch {
@@ -88,6 +90,27 @@ final class AppState: ObservableObject {
         sessionEffectsHomePayload = nil
         EffectsHomePayloadDiskCache.clear()
         await ensureSessionRemoteDataAtLaunch()
+    }
+
+    /// Прогрев main-каталога и первых preview-видео стартует сразу на онбординге, чтобы к кнопке «Начать» экран эффектов уже был тёплым.
+    /// Если warmup уже идёт — повторно не запускаем.
+    func ensureOnboardingHomeWarmupStarted() {
+        if let onboardingHomeWarmupTask {
+            if !onboardingHomeWarmupTask.isCancelled { return }
+        }
+
+        let task = Task { @MainActor in
+            defer { self.onboardingHomeWarmupTask = nil }
+
+            await self.ensureSessionRemoteDataAtLaunch()
+            guard let payload = self.sessionEffectsHomePayload else { return }
+
+            await EffectsMediaOrchestrator.shared.prewarmHomeLandingFromOnboardingIfNeeded(
+                sceneIsActive: true,
+                payload: payload
+            )
+        }
+        onboardingHomeWarmupTask = task
     }
 
     /// Полноэкранный paywall поверх текущего маршрута (после закрытия остаёмся на том же экране).
@@ -123,17 +146,17 @@ final class AppState: ObservableObject {
     // Состояния для модального окна оценки приложения
     @Published var showRatingModal: Bool = false
 
-    // Лимиты генераций
+    // Лимиты бесплатных генераций для текущего приложения фиксированы в коде.
     private let DEFAULT_FREE_GENERATIONS_LIMIT = 2
 
     /// Актуальный лимит бесплатных генераций (lifetime)
     var freeGenerationsLimit: Int {
-        PaywallCacheManager.shared.paywallConfig?.logic.freeGenerationsLimit ?? DEFAULT_FREE_GENERATIONS_LIMIT
+        DEFAULT_FREE_GENERATIONS_LIMIT
     }
 
     /// Майлстоуны по счёту генераций, после которых показывать запрос оценки (из конфига / Adapty).
     var showRatingAfterGenerations: [Int] {
-        PaywallCacheManager.shared.paywallConfig?.logic.showRatingAfterGenerations ?? [2]
+        PaywallCacheManager.shared.paywallConfig?.logic.showRatingAfterGenerations ?? []
     }
 
     // MARK: - PRO generation tracking
@@ -146,11 +169,11 @@ final class AppState: ObservableObject {
     @AppStorage("bonusGenerations") var bonusGenerations: Int = 0
 
     /// Лимит генераций для текущего плана подписки (из Adapty remote config).
-    /// Берётся из общей мапы `generationLimits` по `vendorProductId`.
+    /// Берётся из `logic.generationLimits` по `vendorProductId`.
     /// Возвращает `nil` если лимит неизвестен → считаем неограниченным.
     /// В dev-режиме (PRO вкл, но Adapty не дал productId) берём лимит первого плана из конфига.
     var proGenerationsLimit: Int? {
-        guard let limits = PaywallCacheManager.shared.paywallConfig?.generationLimits, !limits.isEmpty else { return nil }
+        guard let limits = PaywallCacheManager.shared.paywallConfig?.logic.generationLimits, !limits.isEmpty else { return nil }
         let currentPlanId = adaptyService.currentSubscriptionProductId ?? ""
         // Прямое совпадение
         if let limit = limits[currentPlanId] { return limit }
@@ -181,6 +204,8 @@ final class AppState: ObservableObject {
 
     /// Ключ UserDefaults: майлстоуны, на которых уже показывали запрос оценки (храним как "2,10,50").
     private let ratingModalShownKey = "ratingModalShownAtGenerations"
+    /// Майлстоуны из `showRatingAfterGenerations`, для которых запрос оценки отложен до выхода с `MediaDetailView` ("1,5").
+    private let pendingRatingPromptMilestonesKey = "pendingRatingPromptMilestones"
     /// Пользователь нажал «Нравится» в окне оценки — не показываем запрос на следующих майлстоунах генераций.
     private static let userRatedAppPositiveKey = "user_rated_app_positive"
 
@@ -190,6 +215,7 @@ final class AppState: ObservableObject {
 
     private func markUserRatedAppPositive() {
         UserDefaults.standard.set(true, forKey: Self.userRatedAppPositiveKey)
+        clearPendingRatingPromptMilestonesStorage()
     }
     
     // Восстанавливаем AppStorage для основных данных
@@ -291,7 +317,7 @@ final class AppState: ObservableObject {
 
         // Предзагружаем данные Paywall без отрыва от MainActor (избегаем Sendable-захвата `self` в detached).
         Task(priority: .userInitiated) {
-            await self.preloadPaywallData()
+            _ = await self.ensurePaywallPreloaded()
         }
 
         // Последний успешный каталог с диска: сплеш не ждёт сеть; свежий ответ подменит payload в фоне.
@@ -326,18 +352,31 @@ final class AppState: ObservableObject {
     
     // MARK: - Paywall Preloading
     
+    /// Single-flight для прогрева paywall: исключаем дублирующие тяжелые загрузки с App launch и финального шага Onboarding.
+    @discardableResult
+    func ensurePaywallPreloaded() async -> Bool {
+        if let paywallPreloadTask {
+            return await paywallPreloadTask.value
+        }
+        let task = Task<Bool, Never> { @MainActor in
+            defer { self.paywallPreloadTask = nil }
+            return await self.preloadPaywallData()
+        }
+        paywallPreloadTask = task
+        return await task.value
+    }
+
     /// Предзагружает данные Paywall в фоне
-    private func preloadPaywallData() async {
+    private func preloadPaywallData() async -> Bool {
         print("💰 [AppState] Начинаем предзагрузку данных Paywall")
         let success = await PaywallCacheManager.shared.loadAndCachePaywallDataAsync()
-        await MainActor.run {
-            self.tokenWallet.syncWithCurrentConfig()
-            if success {
-                print("✅ [AppState] Данные Paywall предзагружены")
-            } else {
-                print("⚠️ [AppState] Ошибка предзагрузки данных Paywall")
-            }
+        self.tokenWallet.syncWithCurrentConfig()
+        if success {
+            print("✅ [AppState] Данные Paywall предзагружены")
+        } else {
+            print("⚠️ [AppState] Ошибка предзагрузки данных Paywall")
         }
+        return success
     }
     
     
@@ -410,17 +449,37 @@ final class AppState: ObservableObject {
             }
         }
 
-        // Показ запроса оценки на майлстоунах из конфига (локальный + override из Adapty).
-        // Apple не даёт узнать, оставил ли пользователь отзыв; показываем раз на каждый майлстоун.
-        // Если пользователь уже нажал «Нравится» — больше не беспокоим.
+        // Запрос оценки не сразу после генерации: ставим майлстоун в очередь и показываем диалог
+        // после того, как пользователь открыл медиа в `MediaDetailView` и вышел (см. `handleMediaDetailDismissed`).
         let milestones = showRatingAfterGenerations
         let alreadyShown = ratingModalShownAtGenerations
         let countSnapshot = successfulGenerationsCount
         if !hasUserRatedAppPositive, milestones.contains(countSnapshot), !alreadyShown.contains(countSnapshot) {
-            markRatingModalShown(at: countSnapshot)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                self.presentAppRatingPrompt()
-            }
+            addPendingRatingPromptMilestone(countSnapshot)
+        }
+    }
+
+    /// Вызывать при закрытии полноэкранного `MediaDetailView` (галерея или оверлей после генерации).
+    /// Один показ на майлстоун из `showRatingAfterGenerations`; за один выход — не больше одного диалога (самый ранний ожидающий).
+    func handleMediaDetailDismissed() {
+        guard !hasUserRatedAppPositive else { return }
+        guard dynamicModalManager != nil else { return }
+
+        let milestoneSet = Set(showRatingAfterGenerations)
+        let shownSet = Set(ratingModalShownAtGenerations)
+        var pending = pendingRatingPromptMilestones
+
+        pending = pending.filter { milestoneSet.contains($0) && !shownSet.contains($0) && successfulGenerationsCount >= $0 }
+        setPendingRatingPromptMilestones(pending)
+
+        guard let m = pending.min() else { return }
+
+        markRatingModalShown(at: m)
+        pending.remove(m)
+        setPendingRatingPromptMilestones(pending)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.presentAppRatingPrompt()
         }
     }
 
@@ -440,14 +499,41 @@ final class AppState: ObservableObject {
         }
     }
 
+    private var pendingRatingPromptMilestones: Set<Int> {
+        let s = UserDefaults.standard.string(forKey: pendingRatingPromptMilestonesKey) ?? ""
+        return Set(s.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) })
+    }
+
+    private func setPendingRatingPromptMilestones(_ milestones: Set<Int>) {
+        if milestones.isEmpty {
+            UserDefaults.standard.removeObject(forKey: pendingRatingPromptMilestonesKey)
+        } else {
+            let csv = milestones.sorted().map(String.init).joined(separator: ",")
+            UserDefaults.standard.set(csv, forKey: pendingRatingPromptMilestonesKey)
+        }
+    }
+
+    private func addPendingRatingPromptMilestone(_ generationCount: Int) {
+        var p = pendingRatingPromptMilestones
+        p.insert(generationCount)
+        setPendingRatingPromptMilestones(p)
+    }
+
+    private func clearPendingRatingPromptMilestonesStorage() {
+        UserDefaults.standard.removeObject(forKey: pendingRatingPromptMilestonesKey)
+    }
+
     /// Сбросить майлстоуны показа запроса оценки (для debug / тестов).
     func resetRatingModalShownMilestones() {
         UserDefaults.standard.removeObject(forKey: ratingModalShownKey)
         UserDefaults.standard.removeObject(forKey: Self.userRatedAppPositiveKey)
+        clearPendingRatingPromptMilestonesStorage()
     }
 
     /// Хранит выбранный эффект отдельно от enum route, чтобы Effect Detail мог восстановиться при SwiftUI re-render.
     func openEffectDetail(_ preset: EffectPreset, carouselPresets: [EffectPreset]? = nil, dismissTo: EffectDetailDismissDestination = .effectsHome) {
+        // До смены экрана заранее выставляем приоритет активного detail-превью через оркестратор, чтобы не проигрывать гонку соседним prewarm-задачам.
+        EffectsMediaOrchestrator.shared.prepareDetailEntryPriority(previewVideoURLString: preset.previewVideoURL?.absoluteString)
         let sequence = carouselPresets ?? [preset]
         selectedEffectPreset = preset
         effectDetailCarouselPresets = Self.uniquePresetsPreservingOrder(sequence)
@@ -455,7 +541,8 @@ final class AppState: ObservableObject {
         currentScreen = .effectDetail
     }
 
-    func dismissEffectDetail() {
+    func dismissEffectDetail() async {
+        await EffectsMediaOrchestrator.shared.resetDetailPriority()
         selectedEffectPreset = nil
         effectDetailCarouselPresets = []
         switch effectDetailDismissDestination {
@@ -621,12 +708,12 @@ final class AppState: ObservableObject {
         return "\(body) \(tomorrowHint)"
     }
     
-    /// Диалог «нравится приложение» → системный запрос оценки или модалка негативного фидбека. Майлстоуны генераций и пункт «Оценить» в настройках.
+    /// Диалог «нравится приложение» → при «Да» системный запрос оценки; при «Нет» только закрытие (без экрана «что не понравилось» — не дожимаем после отказа).
     func presentAppRatingPrompt() {
-        guard let modalManager = dynamicModalManager else { 
-            return 
+        guard let modalManager = dynamicModalManager else {
+            return
         }
-        
+
         let config = DynamicModalConfig.appRating(
             primaryAction: {
                 self.markUserRatedAppPositive()
@@ -635,51 +722,6 @@ final class AppState: ObservableObject {
                     RateService().requestReview()
                 } else {
                     RateService().rateApp()
-                }
-            },
-            secondaryAction: {
-                // Сначала закрываем текущую модалку
-                modalManager.dismissModal()
-                
-                // Затем с задержкой показываем модальное окно для сбора отрицательного отзыва
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    let feedbackConfig = DynamicModalConfig(
-                        title: "feedback_sad_title".localized,
-                        description: "feedback_sad_description".localized,
-                        primaryButtonTitle: "send".localized,
-                        secondaryButtonTitle: "cancel".localized,
-                        iconName: "envelope.fill",
-                        primaryAction: {
-                            // This will be handled by inputAction
-                        },
-                        secondaryAction: {
-                            // User cancelled
-                        },
-                        showInputField: true,
-                        inputFieldType: .multiLine(placeholder: "feedback_placeholder".localized),
-                        inputText: .constant(""),
-                        inputAction: { message in
-                            // Отправляем отзыв через ContactService
-                            ContactService.shared.submitContactForm(message: "Negative feedback: \(message)") { result in
-                                DispatchQueue.main.async {
-                                    switch result {
-                                    case .success:
-                                        self.notificationManager.showSuccess("feedback_thank_you".localized)
-                                        modalManager.dismissModal()
-                                    case .failure(let error):
-                                        self.notificationManager.showError("error_feedback_send_failed".localized(with: error.localizedDescription))
-                                    }
-                                }
-                            }
-                        },
-                        inputValidationError: { errorMessage in
-                            self.notificationManager.showError(errorMessage)
-                        },
-                        allowDismissOnBackgroundTap: true,
-                        showsHeroDecoration: false
-                    )
-                    
-                    modalManager.showModal(with: feedbackConfig)
                 }
             }
         )
@@ -912,6 +954,11 @@ final class AppState: ObservableObject {
     
     func handleAppDidBecomeActive() {
         print("🔄 [AppState] App became active, checking for data updates")
+        if !hasHandledFirstDidBecomeActive {
+            hasHandledFirstDidBecomeActive = true
+            print("ℹ️ [AppState] First didBecomeActive skipped to avoid duplicate launch refresh")
+            return
+        }
         // При возврате в приложение косметически обновляем период PRO-подписки,
         // чтобы лимит генераций и цифра на плашке сразу были актуальными.
         checkAndResetProPeriodIfNeeded()

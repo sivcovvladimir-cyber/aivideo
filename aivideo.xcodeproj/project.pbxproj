@@ -8,13 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		D7E826EF2FA6911F005FA2AB /* LoopingVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E826EE2FA6911F005FA2AB /* LoopingVideoPlayer.swift */; };
+		D7E827642FAA40A9005FA2AB /* TelegramSupportClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E827632FAA40A9005FA2AB /* TelegramSupportClient.swift */; };
 		FA2C34992E12A8DA004ADB45 /* GeneratedImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2C34982E12A8DA004ADB45 /* GeneratedImageService.swift */; };
 		FA4105F12E12CA3F00CCA9CF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = FA4105EF2E12CA3F00CCA9CF /* InfoPlist.strings */; };
 		FA4105F42E12CA5200CCA9CF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = FA4105F22E12CA5200CCA9CF /* InfoPlist.strings */; };
 		FA4105FA2E133FC300CCA9CF /* TopNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4105F92E133FC300CCA9CF /* TopNavigationBar.swift */; };
-		FA6E00502F30000100000052 /* PrimaryCTAButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F30000100000053 /* PrimaryCTAButton.swift */; };
-		FA6E00562F30000100000056 /* RoundThumbSwitchToggleStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */; };
-		FA6E005C2F3000010000005C /* EffectsHomePayloadDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */; };
 		FA4105FF2E13524E00CCA9CF /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4105FD2E13524E00CCA9CF /* MediaDetailView.swift */; };
 		FA4106042E15B84800CCA9CF /* DownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4106012E15B84800CCA9CF /* DownloadService.swift */; };
 		FA4106052E15B84800CCA9CF /* DeleteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4106002E15B84800CCA9CF /* DeleteService.swift */; };
@@ -35,6 +33,7 @@
 		FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00152F10000100000015 /* PixVerseAPIService.swift */; };
 		FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00172F10000100000017 /* GenerationJobService.swift */; };
 		FA6E00182F10000100000018 /* GenerationProgressOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */; };
+		FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001B2F1000010000001B /* GenerationBillingService.swift */; };
 		FA6E001C2F1000010000001C /* EffectsSectionBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */; };
 		FA6E001E2F2000030000001E /* AIVideo.storekit in Resources */ = {isa = PBXBuildFile; fileRef = FA6E001F2F2000030000001F /* AIVideo.storekit */; };
 		FA6E00222F10000100000022 /* GenerationPromptScreenDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00212F10000100000021 /* GenerationPromptScreenDraft.swift */; };
@@ -43,6 +42,9 @@
 		FA6E00422F10000100000042 /* PreviewMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00432F10000100000043 /* PreviewMediaView.swift */; };
 		FA6E00442F10000100000044 /* MediaVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00452F10000100000045 /* MediaVideoPlayer.swift */; };
 		FA6E00462F10000100000048 /* EffectPreset+BundledPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00472F10000100000049 /* EffectPreset+BundledPreview.swift */; };
+		FA6E00502F30000100000052 /* PrimaryCTAButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F30000100000053 /* PrimaryCTAButton.swift */; };
+		FA6E00562F30000100000056 /* RoundThumbSwitchToggleStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */; };
+		FA6E005C2F3000010000005C /* EffectsHomePayloadDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */; };
 		FA828E802E0C97E70059B2CA /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6070902E0BF7260047A0A9 /* Extensions.swift */; };
 		FA828E812E0C97E70059B2CA /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA60709E2E0C4FC80047A0A9 /* CachedAsyncImage.swift */; };
 		FA828E822E0C97E70059B2CA /* BottomNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6070922E0BFFDC0047A0A9 /* BottomNavigationBar.swift */; };
@@ -77,7 +79,6 @@
 		FA95019B2E2EDEC0001E9F2E /* RateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA95019A2E2EDEC0001E9F2E /* RateService.swift */; };
 		FAC32DEE2E3E05CC00D84786 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC32DED2E3E05CC00D84786 /* KeychainService.swift */; };
 		FAD424092F5EF0C600EFC0D7 /* AdServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAD424082F5EF0C600EFC0D7 /* AdServices.framework */; };
-		FAD653312E0C8CCA0030B880 /* AppsFlyerLib in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653302E0C8CCA0030B880 /* AppsFlyerLib */; };
 		FAD653332E0C8CE50030B880 /* Adapty in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653322E0C8CE50030B880 /* Adapty */; };
 		FAD653352E0C8CE50030B880 /* AdaptyPlugin in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653342E0C8CE50030B880 /* AdaptyPlugin */; };
 		FAD653372E0C8CE50030B880 /* AdaptyUI in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653362E0C8CE50030B880 /* AdaptyUI */; };
@@ -98,14 +99,12 @@
 
 /* Begin PBXFileReference section */
 		D7E826EE2FA6911F005FA2AB /* LoopingVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoopingVideoPlayer.swift; sourceTree = "<group>"; };
+		D7E827632FAA40A9005FA2AB /* TelegramSupportClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSupportClient.swift; sourceTree = "<group>"; };
 		FA2C34982E12A8DA004ADB45 /* GeneratedImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedImageService.swift; sourceTree = "<group>"; };
 		FA2C349C2E12B151004ADB45 /* Home.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Home.pdf; sourceTree = "<group>"; };
 		FA4105F02E12CA3F00CCA9CF /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InfoPlist.strings; sourceTree = "<group>"; };
 		FA4105F32E12CA5200CCA9CF /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = InfoPlist.strings; sourceTree = "<group>"; };
 		FA4105F92E133FC300CCA9CF /* TopNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopNavigationBar.swift; sourceTree = "<group>"; };
-		FA6E00512F30000100000053 /* PrimaryCTAButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryCTAButton.swift; sourceTree = "<group>"; };
-		FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundThumbSwitchToggleStyle.swift; sourceTree = "<group>"; };
-		FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsHomePayloadDiskCache.swift; sourceTree = "<group>"; };
 		FA4105FD2E13524E00CCA9CF /* MediaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDetailView.swift; sourceTree = "<group>"; };
 		FA4106002E15B84800CCA9CF /* DeleteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteService.swift; sourceTree = "<group>"; };
 		FA4106012E15B84800CCA9CF /* DownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadService.swift; sourceTree = "<group>"; };
@@ -131,6 +130,7 @@
 		FA6E00152F10000100000015 /* PixVerseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixVerseAPIService.swift; sourceTree = "<group>"; };
 		FA6E00172F10000100000017 /* GenerationJobService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationJobService.swift; sourceTree = "<group>"; };
 		FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationProgressOverlayView.swift; sourceTree = "<group>"; };
+		FA6E001B2F1000010000001B /* GenerationBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationBillingService.swift; sourceTree = "<group>"; };
 		FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSectionBrowseView.swift; sourceTree = "<group>"; };
 		FA6E001F2F2000030000001F /* AIVideo.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AIVideo.storekit; sourceTree = "<group>"; };
 		FA6E00212F10000100000021 /* GenerationPromptScreenDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationPromptScreenDraft.swift; sourceTree = "<group>"; };
@@ -139,6 +139,9 @@
 		FA6E00432F10000100000043 /* PreviewMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewMediaView.swift; sourceTree = "<group>"; };
 		FA6E00452F10000100000045 /* MediaVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaVideoPlayer.swift; sourceTree = "<group>"; };
 		FA6E00472F10000100000049 /* EffectPreset+BundledPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EffectPreset+BundledPreview.swift"; sourceTree = "<group>"; };
+		FA6E00512F30000100000053 /* PrimaryCTAButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryCTAButton.swift; sourceTree = "<group>"; };
+		FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundThumbSwitchToggleStyle.swift; sourceTree = "<group>"; };
+		FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsHomePayloadDiskCache.swift; sourceTree = "<group>"; };
 		FA828EFB2E0EE5250059B2CA /* App Icon 2.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "App Icon 2.png"; sourceTree = "<group>"; };
 		FA828EFC2E0EE7F10059B2CA /* Arrow - Left.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = "Arrow - Left.pdf"; sourceTree = "<group>"; };
 		FA89A8852E342F4300F5A9F6 /* DynamicModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicModal.swift; sourceTree = "<group>"; };
@@ -275,7 +278,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				FAD424092F5EF0C600EFC0D7 /* AdServices.framework in Frameworks */,
-				FAD653312E0C8CCA0030B880 /* AppsFlyerLib in Frameworks */,
 				FAD6533B2E0C8D0B0030B880 /* FirebaseAnalytics in Frameworks */,
 				FAD6533D2E0C8D0B0030B880 /* FirebaseCrashlytics in Frameworks */,
 				FAD653372E0C8CE50030B880 /* AdaptyUI in Frameworks */,
@@ -299,26 +301,20 @@
 		FA4106032E15B84800CCA9CF /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				FA41061C2E2BA25700CCA9CF /* AdaptyService.swift */,
+				D7E827632FAA40A9005FA2AB /* TelegramSupportClient.swift */,
 				FA8A8F702E43A83E0091D637 /* AppAnalyticsService.swift */,
 				FA6E00082F10000100000008 /* GenerationCostCalculator.swift */,
+				FA6E001B2F1000010000001B /* GenerationBillingService.swift */,
 				FA6E00172F10000100000017 /* GenerationJobService.swift */,
 				FAC32DED2E3E05CC00D84786 /* KeychainService.swift */,
 				FA6E00132F10000100000013 /* TokenWalletService.swift */,
 				FA95019A2E2EDEC0001E9F2E /* RateService.swift */,
-				FA4106202E2BA25700CCA9CF /* Adapty */,
 				FA4106002E15B84800CCA9CF /* DeleteService.swift */,
 				FA4106012E15B84800CCA9CF /* DownloadService.swift */,
 				FA4106022E15B84800CCA9CF /* ShareService.swift */,
 			);
 			path = Services;
-			sourceTree = "<group>";
-		};
-		FA4106202E2BA25700CCA9CF /* Adapty */ = {
-			isa = PBXGroup;
-			children = (
-				FA41061C2E2BA25700CCA9CF /* AdaptyService.swift */,
-			);
-			path = Adapty;
 			sourceTree = "<group>";
 		};
 		FA6E00052F10000100000005 /* Effects */ = {
@@ -709,7 +705,6 @@
 			);
 			name = aivideo;
 			packageProductDependencies = (
-				FAD653302E0C8CCA0030B880 /* AppsFlyerLib */,
 				FAD653322E0C8CE50030B880 /* Adapty */,
 				FAD653342E0C8CE50030B880 /* AdaptyPlugin */,
 				FAD653362E0C8CE50030B880 /* AdaptyUI */,
@@ -754,7 +749,6 @@
 			packageReferences = (
 				FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				FAF17B1E2E0AF93C00A34D7E /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */,
-				FAE2AD0E2E0AFA700005FFB0 /* XCRemoteSwiftPackageReference "AppsFlyerFramework" */,
 				FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -838,6 +832,7 @@
 				FA6E000D2F1000010000000D /* PaywallPlacementTier.swift in Sources */,
 				FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */,
 				FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */,
+				FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */,
 				FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */,
 				FA4106272E2BA25700CCA9CF /* AdaptyService.swift in Sources */,
 				FA89A8C12E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift in Sources */,
@@ -854,6 +849,7 @@
 				FA9501952E2EB536001E9F2E /* AppTheme.swift in Sources */,
 				FA828E962E0C97E70059B2CA /* ImageDownloader.swift in Sources */,
 				FA828E972E0C97E70059B2CA /* NetworkError.swift in Sources */,
+				D7E827642FAA40A9005FA2AB /* TelegramSupportClient.swift in Sources */,
 				FA61CD662F6D915D00A43970 /* SupabaseService.swift in Sources */,
 				FA6E00302F10000100000030 /* SupabaseSessionBootstrap.swift in Sources */,
 				FA6E005C2F3000010000005C /* EffectsHomePayloadDiskCache.swift in Sources */,
@@ -1019,8 +1015,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.company.aivideo;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1071,8 +1067,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.company.aivideo;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1241,14 +1237,6 @@
 				minimumVersion = 4.5.2;
 			};
 		};
-		FAE2AD0E2E0AFA700005FFB0 /* XCRemoteSwiftPackageReference "AppsFlyerFramework" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/AppsFlyerSDK/AppsFlyerFramework";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 6.17.0;
-			};
-		};
 		FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -1272,11 +1260,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
 			productName = YandexMobileMetrica;
-		};
-		FAD653302E0C8CCA0030B880 /* AppsFlyerLib */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FAE2AD0E2E0AFA700005FFB0 /* XCRemoteSwiftPackageReference "AppsFlyerFramework" */;
-			productName = AppsFlyerLib;
 		};
 		FAD653322E0C8CE50030B880 /* Adapty */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -27,12 +27,6 @@ struct AIVideoApp: App {
                         }
                     }
 
-                    // Запрашиваем разрешение на трекинг (IDFA) с небольшой задержкой
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        PermissionManager.shared.requestTrackingPermission { status in
-                            print("🔍 [AI Video] IDFA permission status: \(status.rawValue)")
-                        }
-                    }
                 }
         }
     }

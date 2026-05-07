@@ -209,6 +209,11 @@ struct GalleryView: View {
         pagedMedia.count < filteredMedia.count
     }
 
+    // Фильтр в шапке нужен только когда есть выбор между несколькими медиа; при 0-1 элементе скрываем кнопку как лишнее действие.
+    private var shouldShowFilterButton: Bool {
+        sortedMedia.count >= 2
+    }
+
     /// В галерее только активные задания; завершённые с ошибкой не храним в `recentJobs` (см. `GenerationJobService`).
     private var visibleJobs: [LibraryGenerationJob] {
         // В процессе — только в режиме «Все», чтобы не смешивать черновики с узкими фильтрами.
@@ -348,16 +353,18 @@ struct GalleryView: View {
                 showBackButton: false,
                 customRightContent: AnyView(
                     HStack(spacing: 12) {
-                        Button {
-                            showFilterPicker = true
-                        } label: {
-                            Image(systemName: "line.3.horizontal.decrease")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(selectedFilter == .all ? AppTheme.Colors.textPrimary : AppTheme.Colors.primary)
-                                .opacity(0.9)
+                        if shouldShowFilterButton {
+                            Button {
+                                showFilterPicker = true
+                            } label: {
+                                Image(systemName: "line.3.horizontal.decrease")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(selectedFilter == .all ? AppTheme.Colors.textPrimary : AppTheme.Colors.primary)
+                                    .opacity(0.9)
+                            }
+                            .appPlainButtonStyle()
+                            .accessibilityLabel(Text("gallery_filter_title".localized))
                         }
-                        .appPlainButtonStyle()
-                        .accessibilityLabel(Text("gallery_filter_title".localized))
 
                         // ProStatusBadge(
                         //     tokenBalance: tokenWallet.balance,
@@ -386,6 +393,7 @@ struct GalleryView: View {
                 isEffectReferencePickMode: false,
                 onDismiss: {
                     showMediaDetail = false
+                    appState.handleMediaDetailDismissed()
                 },
                 onEffectReferencePicked: nil,
                 showDeleteInTopBar: true,
@@ -919,15 +927,6 @@ struct MediaItemView: View {
         .frame(width: cardWidth, height: height)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(alignment: .center) {
-            if media.isVideo {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(12)
-                    .background(Color.black.opacity(0.35), in: Circle())
-            }
-        }
     }
 
     private func loadLocalThumbnailIfNeeded() async {

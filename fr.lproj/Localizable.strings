@@ -74,11 +74,11 @@
 "network_connection_lost" = "Connexion perdue. Vérifiez Internet et réessayez";
 "server_error" = "Erreur serveur. Réessayez plus tard";
 "onboarding_step1_title" = "Create AI Videos";
-"onboarding_step1_desc" = "Generate video and photo results from prompts and effects in seconds";
+"onboarding_step1_desc" = "Générez des vidéos et photos à partir d’un prompt ou utilisez des effets prêts à l’emploi";
 "onboarding_step2_title" = "Use Viral Effects";
-"onboarding_step2_desc" = "Pick an effect, upload a photo and let AI create the result";
-"onboarding_step3_title" = "Save Your Results";
-"onboarding_step3_desc" = "Keep your generated videos and photos in the library";
+"onboarding_step2_desc" = "Choisissez un effet, importez une photo — l’IA s’occupe du reste pour vous";
+"onboarding_step3_title" = "Partagez avec vos amis";
+"onboarding_step3_desc" = "Publiez sur Instagram, envoyez à vos amis et amusez-vous";
 "male" = "Homme";
 "female" = "Femme";
 "result" = "Résultat";
@@ -178,6 +178,9 @@
 "per_year" = "par an";
 "per_week" = "par semaine";
 "per_month" = "par mois";
+"paywall_plan_annual" = "Annuel";
+"paywall_plan_monthly" = "Mensuel";
+"paywall_plan_weekly" = "Hebdomadaire";
 "save_75_percent" = "Économisez 75 %";
 "save" = "Enregistrer";
 "subscribe_for" = "S’abonner pour";
@@ -306,11 +309,13 @@
 
 // Generating overlay tips
 "generating_tip_1" = "L’IA crée votre contenu…";
-"generating_tip_2" = "Composition, mouvement et détails…";
-"generating_tip_3" = "Cela prend en général 10 à 30 secondes";
+"generating_tip_2" = "Composition, lumière et détails…";
+"generating_tip_3" = "Les pixels s’échauffent, les shaders papotent — tout va bien";
 "generating_tip_4" = "Ajustement de chaque détail de votre design…";
-"generating_tip_5" = "Presque terminé — un bon rendu IA prend un instant !";
-"generating_tip_6" = "Les pixels s’échauffent, les shaders papotent — tout va bien";
-"generating_tip_7" = "On pourrait précipiter — mais ça se verrait tout de suite";
+"generating_tip_5" = "On pourrait précipiter — mais ça se verrait tout de suite";
+"generating_tip_6" = "Cela peut encore prendre 10 à 30 secondes";
+"generating_tip_7" = "Presque terminé — un bon rendu IA prend un instant !";
 "splash_generated_note" = "Ce contenu a aussi été généré avec cette app";
 "effect_detail_upload_photo" = "Importer une photo";
+"contact_email_optional_placeholder" = "E-mail (optionnel)";
+"contact_email_invalid" = "Veuillez saisir une adresse e-mail valide";

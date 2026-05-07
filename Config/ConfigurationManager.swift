@@ -38,7 +38,6 @@ final class ConfigurationManager {
         case appStoreID = "APP_STORE_ID"
 
         // Support
-        case supportEmail = "SUPPORT_EMAIL"
         case telegramBotToken = "TELEGRAM_BOT_TOKEN"
         case telegramChatId = "TELEGRAM_CHAT_ID"
 
@@ -72,30 +71,13 @@ final class ConfigurationManager {
     
     /// Validate that all required keys are present and not empty
     private func validateConfiguration() {
-        let requiredKeys = [
-            ConfigKey.replicateAPIKey,
-            ConfigKey.adaptyPublicKey,
-            ConfigKey.firebaseAPIKey,
-            ConfigKey.appsFlyerDevKey
-        ]
-        
-        for key in requiredKeys {
-            guard let value = configuration[key.rawValue], !value.isEmpty else {
-                #if DEBUG
-                print("⚠️ Warning: Missing or empty configuration value for key: \(key.rawValue)")
-                #else
-                fatalError("Missing required configuration value for key: \(key.rawValue)")
-                #endif
-                continue
-            }
-            
-            // In DEBUG, warn if using placeholder values
-            #if DEBUG
-            if value.hasPrefix("YOUR_") {
-                print("⚠️ Warning: Using placeholder value for key: \(key.rawValue)")
-            }
-            #endif
+        // Как в storecards: ключи APIKeys не обязательны глобально.
+        // Каждый SDK включаетcя отдельно, когда конкретный ключ реально задан.
+        #if DEBUG
+        if configuration.isEmpty {
+            print("⚠️ Warning: APIKeys.plist is empty")
         }
+        #endif
     }
     
     /// Get a configuration value for a given key
@@ -114,6 +96,43 @@ final class ConfigurationManager {
             throw ConfigurationError.missingValue(key: key.rawValue)
         }
         return value
+    }
+
+    /// Поддержка через Telegram включается только когда заданы оба ключа без плейсхолдеров.
+    var isTelegramSupportConfigured: Bool {
+        isKeyConfigured(for: .telegramBotToken) && isKeyConfigured(for: .telegramChatId)
+    }
+
+    /// Adapty включаем только при валидном публичном ключе без плейсхолдера.
+    var isAdaptyConfigured: Bool {
+        isKeyConfigured(for: .adaptyPublicKey)
+    }
+
+    /// Нормализованные креды Telegram поддержки для единого канала отправки.
+    var telegramSupportCredentials: (botToken: String, chatId: String)? {
+        guard isTelegramSupportConfigured,
+              let botToken = getValue(for: .telegramBotToken)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let chatId = getValue(for: .telegramChatId)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !botToken.isEmpty, !chatId.isEmpty else {
+            return nil
+        }
+        return (botToken, chatId)
+    }
+
+    func isKeyConfigured(for key: ConfigKey) -> Bool {
+        guard let value = getValue(for: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return false
+        }
+
+        let uppercased = value.uppercased()
+        return !uppercased.contains("YOUR_")
+            && !uppercased.contains("TODO")
+            && !uppercased.contains("<")
+            && !uppercased.contains(">")
     }
 }
 

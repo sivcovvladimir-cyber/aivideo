@@ -67,7 +67,10 @@ struct DynamicModalConfig {
     let showInputField: Bool
     let inputFieldType: InputFieldType?
     let inputText: Binding<String>?
+    let optionalSecondaryPlaceholder: String?
+    let optionalSecondaryText: Binding<String>?
     let inputAction: ((String) -> Void)?
+    let inputActionWithSecondary: ((String, String) -> Void)?
     let inputValidationError: ((String) -> Void)?
     
     // Dismiss configuration
@@ -87,7 +90,10 @@ struct DynamicModalConfig {
         showInputField: Bool = false,
         inputFieldType: InputFieldType? = nil,
         inputText: Binding<String>? = nil,
+        optionalSecondaryPlaceholder: String? = nil,
+        optionalSecondaryText: Binding<String>? = nil,
         inputAction: ((String) -> Void)? = nil,
+        inputActionWithSecondary: ((String, String) -> Void)? = nil,
         inputValidationError: ((String) -> Void)? = nil,
         allowDismissOnBackgroundTap: Bool = true,
         showsHeroDecoration: Bool = true
@@ -102,7 +108,10 @@ struct DynamicModalConfig {
         self.showInputField = showInputField
         self.inputFieldType = inputFieldType
         self.inputText = inputText
+        self.optionalSecondaryPlaceholder = optionalSecondaryPlaceholder
+        self.optionalSecondaryText = optionalSecondaryText
         self.inputAction = inputAction
+        self.inputActionWithSecondary = inputActionWithSecondary
         self.inputValidationError = inputValidationError
         self.allowDismissOnBackgroundTap = allowDismissOnBackgroundTap
         self.showsHeroDecoration = showsHeroDecoration
@@ -115,6 +124,7 @@ struct DynamicModal: View {
     @Binding var isPresented: Bool
     let config: DynamicModalConfig
     @State private var internalText = ""
+    @State private var internalSecondaryText = ""
     @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
@@ -191,9 +201,30 @@ struct DynamicModal: View {
                                 .stroke(AppTheme.Colors.border, lineWidth: 1)
                         )
                         .onSubmit {
-                            if let inputAction = config.inputAction {
+                            if let inputActionWithSecondary = config.inputActionWithSecondary {
+                                inputActionWithSecondary(internalText, internalSecondaryText)
+                            } else if let inputAction = config.inputAction {
                                 inputAction(internalText)
                             }
+                        }
+
+                        if let secondaryPlaceholder = config.optionalSecondaryPlaceholder,
+                           config.optionalSecondaryText != nil {
+                            TextField(secondaryPlaceholder, text: $internalSecondaryText)
+                                .environment(\.colorScheme, AppTheme.current == .dark ? .dark : .light)
+                                .font(AppTheme.Typography.body)
+                                .foregroundColor(AppTheme.Colors.textPrimary)
+                                .accentColor(AppTheme.Colors.primary)
+                                .padding(16)
+                                .background(AppTheme.Colors.cardBackground)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(AppTheme.Colors.border, lineWidth: 1)
+                                )
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled(true)
                         }
                     }
                 }
@@ -204,9 +235,10 @@ struct DynamicModal: View {
                     Button(action: {
                         // Если есть поле ввода и обработчик, передаем текст напрямую
                         if config.showInputField, 
-                           let inputAction = config.inputAction {
+                           (config.inputAction != nil || config.inputActionWithSecondary != nil) {
                             // Получаем текст из TextField напрямую
                             let currentText = internalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let secondaryText = internalSecondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
                             
                             // Проверяем, что поле не пустое
                             if currentText.isEmpty {
@@ -216,7 +248,11 @@ struct DynamicModal: View {
                                 }
                                 return // Не закрываем модал
                             }
-                            inputAction(currentText)
+                            if let inputActionWithSecondary = config.inputActionWithSecondary {
+                                inputActionWithSecondary(currentText, secondaryText)
+                            } else if let inputAction = config.inputAction {
+                                inputAction(currentText)
+                            }
                             // Не закрываем модал автоматически - пусть inputAction сам решает
                         } else {
                             config.primaryAction()
@@ -256,6 +292,14 @@ struct DynamicModal: View {
         .transition(.opacity.combined(with: .scale))
         .animation(.easeInOut(duration: 0.3), value: isPresented)
         .zIndex(1000) // Убеждаемся, что модальное окно поверх всего
+        .onAppear {
+            if let text = config.inputText?.wrappedValue {
+                internalText = text
+            }
+            if let secondaryText = config.optionalSecondaryText?.wrappedValue {
+                internalSecondaryText = secondaryText
+            }
+        }
 
     }
     
@@ -450,6 +494,8 @@ extension DynamicModalConfig {
         description: String,
         placeholder: String,
         inputText: Binding<String>,
+        allowDismissOnBackgroundTap: Bool = false,
+        primaryButtonTitle: String = "confirm".localized,
         primaryAction: @escaping (String) -> Void,
         secondaryAction: (() -> Void)? = nil,
         validationError: ((String) -> Void)? = nil,
@@ -458,7 +504,7 @@ extension DynamicModalConfig {
         return DynamicModalConfig(
             title: title,
             description: description,
-            primaryButtonTitle: "confirm".localized,
+            primaryButtonTitle: primaryButtonTitle,
             secondaryButtonTitle: "cancel".localized,
             iconName: "envelope.fill",
             primaryAction: { },
@@ -468,7 +514,41 @@ extension DynamicModalConfig {
             inputText: inputText,
             inputAction: primaryAction,
             inputValidationError: validationError,
-            allowDismissOnBackgroundTap: false
+            allowDismissOnBackgroundTap: allowDismissOnBackgroundTap
+        )
+    }
+
+    // Конфигурация для многострочного ввода + optional второго поля (например email для ответа).
+    static func multiLineInput(
+        title: String,
+        description: String,
+        placeholder: String,
+        inputText: Binding<String>,
+        optionalSecondaryPlaceholder: String,
+        optionalSecondaryText: Binding<String>,
+        allowDismissOnBackgroundTap: Bool = true,
+        primaryButtonTitle: String = "confirm".localized,
+        primaryAction: @escaping (String, String) -> Void,
+        secondaryAction: (() -> Void)? = nil,
+        validationError: ((String) -> Void)? = nil,
+        lineLimit: ClosedRange<Int> = 3...6
+    ) -> DynamicModalConfig {
+        return DynamicModalConfig(
+            title: title,
+            description: description,
+            primaryButtonTitle: primaryButtonTitle,
+            secondaryButtonTitle: "cancel".localized,
+            iconName: "envelope.fill",
+            primaryAction: { },
+            secondaryAction: secondaryAction,
+            showInputField: true,
+            inputFieldType: .multiLine(placeholder: placeholder, lineLimit: lineLimit),
+            inputText: inputText,
+            optionalSecondaryPlaceholder: optionalSecondaryPlaceholder,
+            optionalSecondaryText: optionalSecondaryText,
+            inputActionWithSecondary: primaryAction,
+            inputValidationError: validationError,
+            allowDismissOnBackgroundTap: allowDismissOnBackgroundTap
         )
     }
 } 

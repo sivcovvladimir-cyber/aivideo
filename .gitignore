@@ -75,9 +75,9 @@ Pods/
 Podfile.lock
 
 # Sensitive / machine-local plist (не blanket `*.plist`: нужен `aivideo/Info.plist` в репо)
-Config/APIKeys.plist
-GoogleService-Info.plist
-Config/GoogleService-Info.plist
+# Config/APIKeys.plist
+#GoogleService-Info.plist
+#Config/GoogleService-Info.plist
 
 # Локальный кэш SwiftPM внутри папки проекта (Xcode); не путать с версионируемым Package.resolved
 .SourcePackages/
@@ -88,3 +88,4 @@ Config/GoogleService-Info.plist
 .env
 *.md
 *.mdc
+AIVideo.storekit

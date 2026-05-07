@@ -149,22 +149,24 @@ struct EffectsHomePayload: Codable, Equatable {
 
     /// Диагностика каталога эффектов: одним логом видим, что пришло из RPC/памяти AppState и какие poster/motion URL реально попадут в UI.
     func debugLogSummary(source: String, prefix: String = "[effects-preview]") {
-        let heroCount = hero?.items.count ?? 0
-        print("\(prefix) EffectsHomePayload source=\(source) heroItems=\(heroCount) sections=\(sections.count)")
-
-        if let hero {
-            print("\(prefix)   hero section=\(hero.sectionId) title='\(hero.title)' aspect=\(hero.aspectRatio) items=\(hero.items.count)")
-            for item in hero.items {
-                item.debugLogSummary(context: "hero:\(hero.sectionId)", prefix: prefix)
-            }
-        }
-
-        for section in sections {
-            print("\(prefix)   section=\(section.id) title='\(section.title)' aspect=\(section.aspectRatio ?? "nil") items=\(section.items.count)")
-            for item in section.items {
-                item.debugLogSummary(context: "section:\(section.id)", prefix: prefix)
-            }
-        }
+        // let heroCount = hero?.items.count ?? 0
+        // print("\(prefix) EffectsHomePayload source=\(source) heroItems=\(heroCount) sections=\(sections.count)")
+        //
+        // if let hero {
+        //     print("\(prefix)   hero section=\(hero.sectionId) title='\(hero.title)' aspect=\(hero.aspectRatio) items=\(hero.items.count)")
+        //     for item in hero.items {
+        //         item.debugLogSummary(context: "hero:\(hero.sectionId)", prefix: prefix)
+        //     }
+        // }
+        //
+        // for section in sections {
+        //     print("\(prefix)   section=\(section.id) title='\(section.title)' aspect=\(section.aspectRatio ?? "nil") items=\(section.items.count)")
+        //     for item in section.items {
+        //         item.debugLogSummary(context: "section:\(section.id)", prefix: prefix)
+        //     }
+        // }
+        _ = source
+        _ = prefix
     }
 
     /// Подмешивает poster/motion в hero из секций по совпадению `preset.id`, чтобы карусель и Effect Detail могли крутить превью как у ленты.
@@ -199,9 +201,11 @@ struct EffectsHomePayload: Codable, Equatable {
 extension EffectsHomeItem {
     /// Лог одной плитки каталога: помогает проверить, не остался ли старый MOV/MP4 в памяти/ответе RPC после миграции на WebP.
     func debugLogSummary(context: String, prefix: String = "[effects-preview]") {
-        let p = preset
-        let image = p.previewImageURL?.absoluteString ?? "nil"
-        let motion = p.previewVideoURL?.absoluteString ?? "nil"
-        print("\(prefix)     item context=\(context) id=\(p.id) slug=\(p.slug) title='\(p.title)' aspect=\(p.aspectRatio ?? "nil") poster=\(image) motion=\(motion)")
+        // let p = preset
+        // let image = p.previewImageURL?.absoluteString ?? "nil"
+        // let motion = p.previewVideoURL?.absoluteString ?? "nil"
+        // print("\(prefix)     item context=\(context) id=\(p.id) slug=\(p.slug) title='\(p.title)' aspect=\(p.aspectRatio ?? "nil") poster=\(image) motion=\(motion)")
+        _ = context
+        _ = prefix
     }
 }

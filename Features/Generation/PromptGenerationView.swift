@@ -77,6 +77,7 @@ struct PromptGenerationView: View {
     }()
 
     // «Удиви меня»: яркие сцены, живые герои, знаменитости и культовые персонажи в разных стилях (в т.ч. один карикатурный).
+    // Дополнительно — ultra-читабельные «камерные» стили (хром, RGB-сплит, 3D-брутализм) и классические AI-хиты: watercolor, color splash, double exposure, riso, paper-cut и т.п.
     private let surprisePrompts = [
         "Tiny capybara in a tiny raincoat splashing in rainbow puddles, Cartoon-like 3D, supersaturated colors, giggly mood",
         "Grandma on roller skates racing through a candy-colored mall, slow-motion confetti, cheeky comedy vibe, wide lens",
@@ -87,6 +88,7 @@ struct PromptGenerationView: View {
         "Hamster in a race car made of cheese slices, toy commercial lighting, explosive joy, macro cinematic",
         "TikTok-style flash mob: synchronized dancers in neon tracksuits on a beach at blue hour, handheld kinetic camera",
         "Donald Trump as a neon food-truck chef flipping giant tacos, exaggerated political caricature, thick ink outlines, satirical Sunday-comic print look",
+        "Snoop Dogg as velvet-roof lowrider BBQ king flipping giant glitter hot dogs in purple haze smoke rings, exaggerated hip-hop caricature, thick ink outlines, satirical Sunday-comic print look, laid-back mischief",
         "Elon Musk in a bronze-age crown launching a toy rocket from a birthday cake, tongue-in-cheek tech-bro parody, warm spotlight, glossy humor",
         "Jeff Bezos on a yacht made of stacked delivery boxes sailing through a sunset of orange and gold, pop-surreal magazine parody, cinematic",
         "Beyoncé in golden wind-machine goddess look on a storm-cloud runway, god-tier lighting, chrome reflections, fierce joy",
@@ -95,20 +97,29 @@ struct PromptGenerationView: View {
         "Lady Gaga in avant-garde sculptural dress emerging from a giant cracked egg on the moon, bizarre high-fashion pop, chrome and latex",
         "Bad Bunny in oversized pastel ski goggles at a tropical ski resort party, reggaeton summer palette, fisheye fun",
         "Ariana Grande in oversized pink hoodie on a cloud of candy floss with oversized moon boots, Y2K cute-pop, soft bloom",
-        "The Weeknd in red blazer silhouette in a hall of mirrors and red laser grids, moody modern R&B noir, cinematic smoke",
         "Hermione Granger mid-spell in a bioluminescent candy forest, wand trail of golden sparks, cinematic fan-poster glow, painterly magic",
         "Daenerys Targaryen with silver hair and flowing cape against a gull-shaped sunset silhouette, epic fantasy oil-painting tableau, windswept",
         "Sherlock Holmes in deerstalker with holographic magnifying glass over neon-noir London rain, stylish detective spoof, teal and magenta",
-        "James Bond in midnight tux on a glass rooftop bar over a futuristic bay, martini shimmer, cool blue luxury thriller still",
+        "James Bond in razor-pressed tux on a rain-lashed cantilevered glass helipad above a tungsten-noir megacity, copper sodium-vapor haze, fat horizontal anamorphic flares, wet chrome reflections, IMAX-scale luxury espionage one-sheet, fine film grain",
         "Wonder Man in battle armor with golden lasso catching lightning on a stormy cliff, comic splash-page energy, bold primaries",
-        "Spider-Man in classic red-blue suit swinging through a bioluminescent night carnival, cel-shaded comic motion blur, joyful hero shot",
+        "Spider-Woman in classic red-blue suit swinging through a bioluminescent night carnival, cel-shaded comic motion blur, joyful hero shot",
         "Iron Woman style armored inventor with glowing arc reactor chest piece hovering over a neon city, cinematic MCU energy, lens flare",       
-        "Green ogre and Donkey on a swamp porch eating rainbow waffles, storybook 3D comedy warmth, golden afternoon, silly grin",
+        "Green Ogre and Donkey on a swamp porch eating rainbow waffles, storybook 3D comedy warmth, golden afternoon, silly grin",
         "Eleven from Stranger Things with nosebleed levitating waffles and Christmas lights in a pink 80s bedroom, nostalgic supernatural whimsy",
         "Mischievous raccoon bandit stealing a whole watermelon from a picnic, motion blur, Looney Tunes energy",
         "Yoga flamingo in leg warmers on a lily pad stage, disco ball sun, absurd fitness parody, pop art flat colors",
         "Sloth barista pouring latte art way too slowly, customers are sloths too, deadpan comedy, warm café palette",
         "Dragon made of origami paper unfolding over a city at dawn, soft origami texture, magical realism, awe shot",
+        "Fashion model drenched in molten liquid chrome on pure black void, mirror-sharp speculars only, Y2K-meets-2025 jewelry macro, single hard strobe, editorial cover",
+        "Portrait through bent optical glass, heavy RGB chromatic aberration and magenta-cyan split shadows, Gen-Z music video still, razor digital clarity, trendy glitch-glam",
+    //  "Giant inflatable pastel Memphis squiggle sofa in raw concrete Brutalist hall, soft SSS plastic 3D render, oversaturated yet matte, design-magazine hero shot, soft bounce light",
+        "Red fox napping on a mossy log in autumn forest, dreamy loose watercolor on cold-press paper, wet-on-wet blooms, granulating pigments, deckled edges, soft natural light",
+    //  "Lone dancer in crimson silk twirling in a rain-soaked noir alley, world in desaturated charcoal gray except the dress and umbrella in explosive color splash, cinematic shallow depth",
+    //  "Silhouette of a wolf howling merged with aurora borealis and pine treeline, poetic double exposure on matte midnight blue, ethereal glow, editorial wildlife poster",
+    //  "Retro still life of citrus and vases, risograph print texture, limited soy-ink palette mint and coral, misregistered layers, visible grain, trendy zine aesthetic",
+    //  "Layered paper-cut diorama of a tiny neon city at night, kirigami depth shadows, backlit vellum windows, tactile craft macro, stop-motion storybook vibe",
+    //  "Single crane over misty mountains in minimal sumi-e ink wash, vast negative space, one vermillion seal stamp accent, meditative traditional-meets-AI calm",
+    //  "Macro splash of pearlescent paint colliding in mid-air, slow-mo liquid ribbons, color gel lighting, ASMR satisfying gloss, ultra-clean studio backdrop",
     ]
 
     private enum GenerationMode: String, CaseIterable, Identifiable {

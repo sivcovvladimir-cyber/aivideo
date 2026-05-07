@@ -3,8 +3,51 @@ import YandexMobileMetrica
 import FirebaseCore
 import FirebaseAnalytics
 import FirebaseCrashlytics
+#if canImport(AppsFlyerLib)
 import AppsFlyerLib
+#endif
 import Adapty
+
+#if !canImport(AppsFlyerLib)
+// Локальные no-op заглушки, чтобы проект собирался без SPM-пакета AppsFlyer.
+protocol AppsFlyerLibDelegate: AnyObject {}
+
+final class AppsFlyerLib {
+    private static let sharedInstance = AppsFlyerLib()
+
+    class func shared() -> AppsFlyerLib {
+        sharedInstance
+    }
+
+    var appsFlyerDevKey: String?
+    var appleAppID: String?
+    var isDebug: Bool = false
+    weak var delegate: AppsFlyerLibDelegate?
+    var customerUserID: String?
+
+    func waitForATTUserAuthorization(timeoutInterval: TimeInterval) {}
+    func start() {}
+    func logEvent(_ eventName: String, withValues values: [AnyHashable: Any]?) {}
+    func handleOpen(_ url: URL, options: [UIApplication.OpenURLOptionsKey: Any]) {}
+    func `continue`(_ userActivity: NSUserActivity, restorationHandler: (([Any]?) -> Void)?) {}
+}
+
+let AFEventPurchase = "af_purchase"
+let AFEventAddToCart = "af_add_to_cart"
+let AFEventContentView = "af_content_view"
+let AFEventInitiatedCheckout = "af_initiated_checkout"
+
+let AFEventParamRevenue = "af_revenue"
+let AFEventParamCurrency = "af_currency"
+let AFEventParamContent = "af_content"
+let AFEventParamContentType = "af_content_type"
+#endif
+
+// Для рабочего (Release) бандла не выводим диагностические print-логи аналитики в консоль.
+#if !DEBUG
+@inline(__always)
+private func print(_ items: Any..., separator: String = " ", terminator: String = "\n") {}
+#endif
 
 class AppAnalyticsService {
     static let shared = AppAnalyticsService()
@@ -294,9 +337,56 @@ class AppAnalyticsService {
     }
     
     // MARK: - Private Reporting Methods
+
+    /// AppMetrica принимает только JSON-совместимые типы в parameters; неподдерживаемые значения отбрасываем/нормализуем.
+    private func appMetricaJSONParameters(_ parameters: [String: Any]?) -> [AnyHashable: Any]? {
+        guard let parameters else { return nil }
+
+        func sanitize(_ value: Any) -> Any? {
+            switch value {
+            case let v as String: return v
+            case let v as Int: return v
+            case let v as Int8: return Int(v)
+            case let v as Int16: return Int(v)
+            case let v as Int32: return Int(v)
+            case let v as Int64: return Int(v)
+            case let v as UInt: return Int(v)
+            case let v as UInt8: return Int(v)
+            case let v as UInt16: return Int(v)
+            case let v as UInt32: return Int(v)
+            case let v as UInt64: return Int(v)
+            case let v as Double: return v
+            case let v as Float: return Double(v)
+            case let v as Bool: return v
+            case let v as NSNumber: return v
+            case let v as Date: return ISO8601DateFormatter().string(from: v)
+            case let v as URL: return v.absoluteString
+            case let array as [Any]:
+                return array.compactMap { sanitize($0) }
+            case let dict as [String: Any]:
+                var out: [String: Any] = [:]
+                for (k, val) in dict {
+                    if let s = sanitize(val) {
+                        out[k] = s
+                    }
+                }
+                return out
+            default:
+                return String(describing: value)
+            }
+        }
+
+        var result: [AnyHashable: Any] = [:]
+        for (key, value) in parameters {
+            if let sanitized = sanitize(value) {
+                result[key] = sanitized
+            }
+        }
+        return result.isEmpty ? nil : result
+    }
     
     private func reportToAppMetrica(event: String, parameters: [String: Any]?) async {
-        YMMYandexMetrica.reportEvent(event, parameters: parameters) { _ in
+        YMMYandexMetrica.reportEvent(event, parameters: appMetricaJSONParameters(parameters)) { _ in
             print("✅ [AppAnalytics] AppMetrica event reported: \(event)")
         }
     }
