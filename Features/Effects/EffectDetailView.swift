@@ -177,7 +177,10 @@ struct EffectDetailView: View {
         allowVideoPlayback: Bool,
         preloadMotionWhenHidden: Bool
     ) -> some View {
-        GeometryReader { proxy in
+        // Если detail перекрыт fullscreen-оверлеем (например paywall), считаем экран неактивным:
+        // не держим autoplay/звук под верхним слоем, а после закрытия оверлея поведение восстанавливается.
+        let isDetailScreenInteractable = scenePhase == .active && !appState.isPaywallOverlayPresented
+        return GeometryReader { proxy in
             let w = proxy.size.width
             let h = proxy.size.height
             ZStack {
@@ -189,14 +192,14 @@ struct EffectDetailView: View {
                     imageURL: preset.previewImageURL,
                     image: preset.bundledPreviewUIImage(),
                     motionURL: preset.previewVideoURL?.absoluteString,
-                    shouldPlayMotion: scenePhase == .active && allowVideoPlayback,
-                    preloadsMotionWhenHidden: scenePhase == .active && !allowVideoPlayback && preloadMotionWhenHidden,
+                    shouldPlayMotion: isDetailScreenInteractable && allowVideoPlayback,
+                    preloadsMotionWhenHidden: isDetailScreenInteractable && !allowVideoPlayback && preloadMotionWhenHidden,
                     showsLoadingIndicator: false,
                     // Если AV-motion уже в дисковом кэше, не показываем промежуточный постер: убираем визуальный «скачок» при листании detail.
                     prefersMotionWhenCached: true,
                     // На detail оставляем политику «loader -> video» для кэшированного AV независимо от каталожного флага.
                     showsPosterBeforeMotion: false,
-                    motionPlaybackVolumeOverride: 0.07,
+                    motionPlaybackVolumeOverride: isDetailScreenInteractable ? 0.07 : 0.0,
                     debugLogTag: nil,
                     debugContext: "detail id=\(preset.id) slug=\(preset.slug) title='\(preset.title)'"
                 ) {

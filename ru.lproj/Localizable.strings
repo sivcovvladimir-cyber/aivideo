@@ -35,6 +35,7 @@
 "tokens_insufficient_title" = "Не хватает токенов";
 "tokens_insufficient_body" = "У вас %d токенов, а для этой генерации нужно %d";
 "tokens_insufficient_come_back_tomorrow" = "Загляните завтра";
+"tokens_insufficient_wait_until_tomorrow_or" = "Вы можете подождать до завтра или";
 "tokens_insufficient_primary" = "Получить токены";
 "not_now" = "Не сейчас";
 "generation_failed_refunded" = "Генерация не удалась, токены возвращены: %@";

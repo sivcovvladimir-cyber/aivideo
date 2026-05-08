@@ -37,6 +37,11 @@ DerivedData/
 *.ipa
 *.app
 *.xcarchive
+*.dSYM
+*.dSYM.zip
+*.dSYM.tar.gz
+*.bcsymbolmap
+**/*.dSYM/**
 
 ## Other
 *.moved-aside
@@ -59,6 +64,9 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
+
+# Внутри asset catalog ничего не игнорируем, даже если формат подпадает под глобальные маски (mp4/mov и т.д.).
+!aivideo/Assets.xcassets/**
 
 # JetBrains IDE
 .idea/

@@ -43,6 +43,7 @@
 "tokens_insufficient_title" = "Not enough tokens";
 "tokens_insufficient_body" = "You have %d tokens, but this generation needs %d";
 "tokens_insufficient_come_back_tomorrow" = "Come back tomorrow";
+"tokens_insufficient_wait_until_tomorrow_or" = "You can wait until tomorrow or";
 "tokens_insufficient_primary" = "Get more tokens";
 "library_jobs_section_title" = "In progress";
 "library_job_prompt_video" = "Prompt video";

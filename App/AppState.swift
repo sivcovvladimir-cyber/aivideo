@@ -677,11 +677,9 @@ final class AppState: ObservableObject {
         }
 
         let currentBalance = tokenWallet.balance
-        let dailyCap = tokenWallet.dailyAllowance
         let description = tokensInsufficientModalDescription(
             currentBalance: currentBalance,
-            requiredTokens: requiredTokens,
-            dailyRefillCap: dailyCap
+            requiredTokens: requiredTokens
         )
         modalManager.showModal(with: DynamicModalConfig(
             title: "tokens_insufficient_title".localized,
@@ -700,12 +698,11 @@ final class AppState: ObservableObject {
         ))
     }
 
-    /// Если стоимость генерации выше дневного лимита пополнения из конфига, подсказку «завтра» не показываем — за день так всё равно не накопить.
-    private func tokensInsufficientModalDescription(currentBalance: Int, requiredTokens: Int, dailyRefillCap: Int) -> String {
+    /// В модалке нехватки токенов всегда даём явный сценарий ожидания до завтра отдельной строкой.
+    private func tokensInsufficientModalDescription(currentBalance: Int, requiredTokens: Int) -> String {
         let body = "tokens_insufficient_body".localized(with: currentBalance, requiredTokens)
-        guard requiredTokens <= dailyRefillCap else { return body }
-        let tomorrowHint = "tokens_insufficient_come_back_tomorrow".localized
-        return "\(body) \(tomorrowHint)"
+        let tomorrowHint = "tokens_insufficient_wait_until_tomorrow_or".localized
+        return "\(body)\n\(tomorrowHint)"
     }
     
     /// Диалог «нравится приложение» → при «Да» системный запрос оценки; при «Нет» только закрытие (без экрана «что не понравилось» — не дожимаем после отказа).

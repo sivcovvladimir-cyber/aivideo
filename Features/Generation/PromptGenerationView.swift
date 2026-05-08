@@ -95,14 +95,14 @@ struct PromptGenerationView: View {
         "Freddie Mercury energy: showman in white tank and studded armband on a roaring Wembley-style stage, 80s rock iconography, crowd sea",
         "Michael Jackson in red thriller-era jacket doing a moonwalk through a hall of holographic mirrors, synthwave purple haze",
         "Lady Gaga in avant-garde sculptural dress emerging from a giant cracked egg on the moon, bizarre high-fashion pop, chrome and latex",
-        "Bad Bunny in oversized pastel ski goggles at a tropical ski resort party, reggaeton summer palette, fisheye fun",
+        "Bunny in oversized pastel ski goggles at a tropical ski resort party, reggaeton summer palette, fisheye fun",
         "Ariana Grande in oversized pink hoodie on a cloud of candy floss with oversized moon boots, Y2K cute-pop, soft bloom",
         "Hermione Granger mid-spell in a bioluminescent candy forest, wand trail of golden sparks, cinematic fan-poster glow, painterly magic",
         "Daenerys Targaryen with silver hair and flowing cape against a gull-shaped sunset silhouette, epic fantasy oil-painting tableau, windswept",
         "Sherlock Holmes in deerstalker with holographic magnifying glass over neon-noir London rain, stylish detective spoof, teal and magenta",
         "James Bond in razor-pressed tux on a rain-lashed cantilevered glass helipad above a tungsten-noir megacity, copper sodium-vapor haze, fat horizontal anamorphic flares, wet chrome reflections, IMAX-scale luxury espionage one-sheet, fine film grain",
         "Wonder Man in battle armor with golden lasso catching lightning on a stormy cliff, comic splash-page energy, bold primaries",
-        "Spider-Woman in classic red-blue suit swinging through a bioluminescent night carnival, cel-shaded comic motion blur, joyful hero shot",
+        "Slider-man in classic red-blue suit swinging through a bioluminescent night carnival, cel-shaded comic motion blur, joyful hero shot",
         "Iron Woman style armored inventor with glowing arc reactor chest piece hovering over a neon city, cinematic MCU energy, lens flare",       
         "Green Ogre and Donkey on a swamp porch eating rainbow waffles, storybook 3D comedy warmth, golden afternoon, silly grin",
         "Eleven from Stranger Things with nosebleed levitating waffles and Christmas lights in a pink 80s bedroom, nostalgic supernatural whimsy",
@@ -110,7 +110,7 @@ struct PromptGenerationView: View {
         "Yoga flamingo in leg warmers on a lily pad stage, disco ball sun, absurd fitness parody, pop art flat colors",
         "Sloth barista pouring latte art way too slowly, customers are sloths too, deadpan comedy, warm café palette",
         "Dragon made of origami paper unfolding over a city at dawn, soft origami texture, magical realism, awe shot",
-        "Fashion model drenched in molten liquid chrome on pure black void, mirror-sharp speculars only, Y2K-meets-2025 jewelry macro, single hard strobe, editorial cover",
+    //  "Fashion model drenched in molten liquid chrome on pure black void, mirror-sharp speculars only, Y2K-meets-2025 jewelry macro, single hard strobe, editorial cover",
         "Portrait through bent optical glass, heavy RGB chromatic aberration and magenta-cyan split shadows, Gen-Z music video still, razor digital clarity, trendy glitch-glam",
     //  "Giant inflatable pastel Memphis squiggle sofa in raw concrete Brutalist hall, soft SSS plastic 3D render, oversaturated yet matte, design-magazine hero shot, soft bounce light",
         "Red fox napping on a mossy log in autumn forest, dreamy loose watercolor on cold-press paper, wet-on-wet blooms, granulating pigments, deckled edges, soft natural light",
@@ -684,6 +684,9 @@ struct PromptGenerationView: View {
         }
 
         let anyReference = firstPath != nil || secondPath != nil
+        // При старте генерации показывается fullscreen-оверлей: закрываем клавиатуру,
+        // чтобы не оставлять её поверх экрана и не создавать визуальный конфликт.
+        dismissKeyboard()
 
         switch mode {
         case .video:
@@ -709,6 +712,10 @@ struct PromptGenerationView: View {
                 cost: cost
             )
         }
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     @MainActor

@@ -43,6 +43,7 @@
 "delete" = "Elimina";
 "cancel" = "Annulla";
 "not_now" = "Non ora";
+"tokens_insufficient_wait_until_tomorrow_or" = "Puoi aspettare fino a domani oppure";
 "add" = "Aggiungi";
 "add_color" = "Aggiungi colore";
 "choose_color" = "Scegli colore";

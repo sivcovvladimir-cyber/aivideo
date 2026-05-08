@@ -2,6 +2,16 @@ import SwiftUI
 import UIKit
 
 class ShareService: ObservableObject {
+    // Единый промо-текст для шаринга медиа: нужен, чтобы фото и видео распространялись с одинаковым CTA на установку приложения.
+    private func mediaShareText() -> String? {
+        let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "AI Video"
+        guard let appStoreID = ConfigurationManager.shared.getValue(for: .appStoreID) else {
+            print("❌ [ShareService] App Store ID not configured")
+            return nil
+        }
+        let appStoreURL = "https://apps.apple.com/app/id\(appStoreID)"
+        return "\(appName): \(appStoreURL)"
+    }
     
     /// Поделиться изображением
     /// - Parameters:
@@ -12,17 +22,7 @@ class ShareService: ObservableObject {
     func shareImage(_ image: UIImage, isProUser: Bool = false, from sourceView: UIView? = nil, sourceRect: CGRect = .zero) {
         // Добавляем вотермарк только для непримиум пользователей
         let finalImage = isProUser ? image : (image.addWatermark() ?? image)
-        
-        // Создаем текст для шаринга
-        let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "AI Video"
-        
-        // Используем App Store ID из конфигурации
-        guard let appStoreID = ConfigurationManager.shared.getValue(for: .appStoreID) else {
-            print("❌ [ShareService] App Store ID not configured")
-            return
-        }
-        let appStoreURL = "https://apps.apple.com/app/id\(appStoreID)"
-        let shareText = "\(appName): \(appStoreURL)"
+        guard let shareText = mediaShareText() else { return }
         
         let activityViewController = UIActivityViewController(
             activityItems: [finalImage, shareText],
@@ -102,9 +102,10 @@ class ShareService: ObservableObject {
         } else {
             item = URL(fileURLWithPath: normalized)
         }
+        guard let shareText = mediaShareText() else { return }
 
         let activityViewController = UIActivityViewController(
-            activityItems: [item],
+            activityItems: [item, shareText],
             applicationActivities: nil
         )
 
