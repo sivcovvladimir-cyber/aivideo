@@ -164,13 +164,15 @@ struct DynamicModal: View {
                     .font(AppTheme.Typography.modalTitle)
                     .foregroundColor(AppTheme.Colors.textPrimary)
                     .multilineTextAlignment(.center)
-                
-                // Описание
-                Text(config.description)
-                    .font(AppTheme.Typography.body)
-                    .foregroundColor(AppTheme.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
+
+                // Описание только если задано: пустая строка не оставляет «пустой» абзац и лишний spacing до полей.
+                if !config.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(config.description)
+                        .font(AppTheme.Typography.body)
+                        .foregroundColor(AppTheme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                }
                 
                 // Поле ввода (если включено)
                 if config.showInputField, 
@@ -263,7 +265,7 @@ struct DynamicModal: View {
                             .font(AppTheme.Typography.cardTitle)
                             .foregroundColor(.white)
                             // Та же заливка, что у главных CTA (генерация, пейвол), а не плоский `primary` из `.solidAccent`.
-                            .primaryCTAChrome(isEnabled: true, fill: .productGradient)
+                            .primaryCTAChrome(isEnabled: true, fill: .productGradient, height: 54)
                     }
                     .appPlainButtonStyle()
                     
@@ -278,7 +280,7 @@ struct DynamicModal: View {
                             .font(AppTheme.Typography.body)
                             .foregroundColor(AppTheme.Colors.textSecondary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 44)
+                            .frame(height: 40)
                     }
                     .appPlainButtonStyle()
                 }

@@ -160,7 +160,10 @@ struct AppTheme {
         /// Сканон RGB основного фона: SwiftUI и UIWindow берут отсюда — менять цвет в одном месте.
         private static var mainBackgroundRGB: (CGFloat, CGFloat, CGFloat) {
             switch current {
-            case .dark: return (0.09, 0.10, 0.13)
+            case .dark:
+                // Было: тёмно-синеватый «космос» (0.09, 0.10, 0.13).
+                // return (0.09, 0.10, 0.13)
+                return (0, 0, 0)
             case .light: return (1, 1, 1)
             }
         }
@@ -255,6 +258,20 @@ struct AppTheme {
                 endPoint: .trailing
             )
         }
+    }
+
+    // MARK: - Layout (кастомные шапки вроде `TopNavigationBar`)
+
+    struct Layout {
+        /// Горизонтальный слот в `HStack` для back/правого спейсера — как до расширенной hit-area (заголовок не уезжает вправо).
+        static let navigationBarHStackSideSlotWidth: CGFloat = 28
+        /// Минимальная высота зоны тапа по вертикали (иконка визуально как раньше по горизонтали).
+        static let navigationBarSideControlSize: CGFloat = 44
+        /// Увеличенная зона нажатия только для back: иконка остаётся в слоте 44×44, тап ловится шире (как в storecards `AppNavigationHeader`).
+        static let navigationBarBackButtonHitAreaWidth: CGFloat = 72
+        static let navigationBarBackButtonHitAreaHeight: CGFloat = 52
+        /// Сдвиг расширенной зоны влево от слота иконки — удобнее тап у края экрана.
+        static let navigationBarBackButtonLeadingInset: CGFloat = 12
     }
 
     // MARK: - UIKit window / status bar sync

@@ -156,7 +156,7 @@ struct OnboardingView: View {
         let videoURL = OnboardingHeroTopMedia.heroVideoPlaybackURL(forPage: pageIndex)
         let height = OnboardingHeroLayout.frameHeight(forVideoURL: videoURL)
         if let videoURL {
-            LoopingVideoPlayer(playbackURL: videoURL, playbackVolume: 0.07)
+            LoopingVideoPlayer(playbackURL: videoURL, playbackVolume: 0.1)
                 .frame(height: height)
                 .frame(maxWidth: .infinity)
         } else {

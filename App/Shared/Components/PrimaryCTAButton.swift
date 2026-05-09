@@ -14,16 +14,22 @@ private enum PrimaryCTAMetrics {
     static let standardHeight: CGFloat = 64
 }
 
-/// Общая оболочка полноширинной CTA: фиксированная высота `PrimaryCTAMetrics.standardHeight`, капсула, фон из темы; disabled-режим делаем приглушённым, но читаемым.
+/// Общая оболочка полноширинной CTA: фиксированная высота, капсула, фон из темы; disabled-режим делаем приглушённым, но читаемым.
 struct PrimaryCTAChrome<Content: View>: View {
     var isEnabled: Bool = true
     var fill: PrimaryCTAFill = .productGradient
+    /// `nil` — `standardHeight`; иначе явная высота (например модалка `DynamicModal`).
+    var height: CGFloat? = nil
     @ViewBuilder var content: () -> Content
+
+    private var chromeHeight: CGFloat {
+        height ?? PrimaryCTAMetrics.standardHeight
+    }
 
     var body: some View {
         content()
             .frame(maxWidth: .infinity)
-            .frame(height: PrimaryCTAMetrics.standardHeight)
+            .frame(height: chromeHeight)
             .background { backgroundView }
             .clipShape(Capsule())
     }
@@ -57,8 +63,8 @@ struct PrimaryCTAChrome<Content: View>: View {
 
 extension View {
     /// Полноширинная основная CTA: капсула и фон из `AppTheme` (см. `PrimaryCTAChrome`).
-    func primaryCTAChrome(isEnabled: Bool = true, fill: PrimaryCTAFill = .productGradient) -> some View {
-        PrimaryCTAChrome(isEnabled: isEnabled, fill: fill) { self }
+    func primaryCTAChrome(isEnabled: Bool = true, fill: PrimaryCTAFill = .productGradient, height: CGFloat? = nil) -> some View {
+        PrimaryCTAChrome(isEnabled: isEnabled, fill: fill, height: height) { self }
     }
 }
 

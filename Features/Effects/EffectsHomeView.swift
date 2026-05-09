@@ -390,6 +390,8 @@ struct EffectsHomeView: View {
                     shouldPlayMotion: playHeroMotion,
                     showsLoadingIndicator: false,
                     prefersMotionWhenCached: false,
+                    // Hero не читает `effects_catalog_show_poster_before_motion`, но при тёплом motion-кэше не мигаем jpeg до первого кадра (как матрица `P=false, C=true` в EFFECTS_PREVIEW_BEHAVIOR_SPEC).
+                    // showsPosterBeforeMotion: false,
                     debugLogTag: nil,
                     debugContext: "home-hero id=\(item.preset.id) slug=\(item.preset.slug) title='\(item.preset.title)' index=\(index)",
                     onMotionPlaybackReady: (playHeroMotion && item.preset.previewVideoURL != nil)
@@ -398,6 +400,8 @@ struct EffectsHomeView: View {
                 ) {
                     AppTheme.Colors.cardBackground
                 }
+                // См. рельсы: тот же `preset.id` + новые URL из RPC — сбрасываем `@State` превью, иначе hero может кратковременно держать старый кадр/плеер.
+                .id(catalogRailCellIdentity(item))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
 
@@ -484,7 +488,8 @@ struct EffectsHomeView: View {
                 LazyHStack(spacing: 12) {
                     // Ограничиваем autoplay по фактически видимым карточкам в каждом рельсе:
                     // новые видимые карточки вытесняют старые из лимита, даже если SwiftUI ещё не прислал `onDisappear`.
-                    ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                    // `Identifiable` по `preset.id`, плюс `.id(urls…)`: иначе при смене только preview URL в RPC SwiftUI переиспользует ячейку и тянет старый `@State` плеера/постера.
+                    ForEach(section.items) { item in
                         let autoplayKey = "\(item.id)"
                         EffectCatalogRailCard(
                             item: item,
@@ -508,10 +513,17 @@ struct EffectsHomeView: View {
                         ) {
                             appState.openEffectDetail(item.preset, carouselPresets: section.items.map(\.preset))
                         }
+                        .id(catalogRailCellIdentity(item))
                     }
                 }
             }
         }
+    }
+
+    private func catalogRailCellIdentity(_ item: EffectsHomeItem) -> String {
+        let v = item.preset.previewVideoURL?.absoluteString ?? ""
+        let p = item.preset.previewImageURL?.absoluteString ?? ""
+        return "\(item.id)|\(v)|\(p)"
     }
 
     private func isRailAutoplayEnabled(sectionId: String, key: String) -> Bool {

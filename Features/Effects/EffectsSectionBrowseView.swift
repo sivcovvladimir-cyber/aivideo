@@ -46,7 +46,7 @@ struct EffectsSectionBrowseView: View {
                     LazyVGrid(columns: gridColumns, spacing: 16) {
                         // В view-all включаем autoplay только для последних видимых N карточек:
                         // при скролле новые видимые ячейки вытесняют старые, чтобы playback-слоты не "залипали" вне экрана.
-                        ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                        ForEach(section.items) { item in
                             let autoplayKey = "\(item.id)"
                             EffectCatalogRailCard(
                                 item: item,
@@ -66,6 +66,7 @@ struct EffectsSectionBrowseView: View {
                                 let presets = section.items.map(\.preset)
                                 appState.openEffectDetail(item.preset, carouselPresets: presets, dismissTo: .effectsBrowse(section))
                             }
+                            .id(browseGridCellIdentity(item))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -80,6 +81,12 @@ struct EffectsSectionBrowseView: View {
         .task(id: browseTailWarmupIdentity) {
             await EffectsMediaOrchestrator.shared.reevaluateCatalogTailWarmupForBrowse(section: section)
         }
+    }
+
+    private func browseGridCellIdentity(_ item: EffectsHomeItem) -> String {
+        let v = item.preset.previewVideoURL?.absoluteString ?? ""
+        let p = item.preset.previewImageURL?.absoluteString ?? ""
+        return "\(item.id)|\(v)|\(p)"
     }
 
     private func updateGridAutoplayVisibility(key: String, isVisible: Bool) {

@@ -1,8 +1,11 @@
 import SwiftUI
 import AVFoundation
 import CryptoKit
-#if canImport(WebKit)
-import WebKit
+#if canImport(SDWebImageSwiftUI)
+import SDWebImageSwiftUI
+#endif
+#if canImport(SDWebImage)
+import SDWebImage
 #endif
 #if canImport(AVKit)
 import AVKit
@@ -69,6 +72,7 @@ struct MediaVideoPlayer: View {
     @State private var plainLoopObserver: NSObjectProtocol?
     @StateObject private var readinessObserver = MediaVideoPlayerReadinessObserver()
     @State private var playbackReadyNotified = false
+    @State private var playbackReadyCallbackGeneration = 0
 
     private var url: URL? {
         let normalized = mediaURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -114,7 +118,7 @@ struct MediaVideoPlayer: View {
                 // Для WebP/GIF без этого прогрева соседних карточек не будет: раньше при `shouldPlay=false`
                 // мы отдавали `Color.clear`, и WKWebView создавался только после свайпа.
                 if (shouldPlay || preloadsWhenPaused), let u = url {
-                    AnimatedRasterMotionView(url: u, debugLogTag: debugLogTag, onPlaybackReady: onPlaybackReady)
+                    AnimatedRasterMotionView(url: u, shouldPlay: shouldPlay, debugLogTag: debugLogTag, onPlaybackReady: onPlaybackReady)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Color.clear
@@ -124,7 +128,7 @@ struct MediaVideoPlayer: View {
             }
         }
         .onAppear {
-            let kind = isRasterMotionPreviewURL ? "animated-raster-wkwebview" : "avplayer-video"
+            let kind = isRasterMotionPreviewURL ? "animated-raster-sdwebimage" : "avplayer-video"
             logVideo("appear mediaKind=\(kind) url=\(mediaURL.prefix(120))")
         }
     }
@@ -160,6 +164,7 @@ struct MediaVideoPlayer: View {
             if isActive {
                 if readinessObserver.isReadyForDisplay { notifyPlaybackReadyIfNeeded() }
             } else {
+                playbackReadyCallbackGeneration += 1
                 playbackReadyNotified = false
             }
         }
@@ -196,11 +201,19 @@ struct MediaVideoPlayer: View {
     private func notifyPlaybackReadyIfNeeded() {
         guard shouldPlay, !playbackReadyNotified else { return }
         playbackReadyNotified = true
-        onPlaybackReady?()
+        // AVFoundation часто дергаёт готовность слоя в том же тике, что и `onChange` SwiftUI;
+        // колбэк в родителе (hero `@State`) синхронно даёт «Publishing changes from within view updates» и undefined behavior.
+        let callback = onPlaybackReady
+        let generation = playbackReadyCallbackGeneration
+        DispatchQueue.main.async {
+            guard playbackReadyCallbackGeneration == generation, shouldPlay, playbackReadyNotified else { return }
+            callback?()
+        }
     }
 
     @MainActor
     private func tearDownPlayer() {
+        playbackReadyCallbackGeneration += 1
         playbackReadyNotified = false
         readinessObserver.reset()
         if let obs = plainLoopObserver {
@@ -279,12 +292,15 @@ struct MediaVideoPlayer: View {
             if expandsVideoToIgnoreSafeArea {
                 observeReadiness(of: next)
             }
+            let loopCallback = onPlaybackLoop
             plainLoopObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
                 object: item,
                 queue: .main
-            ) { [weak next, onPlaybackLoop] _ in
-                onPlaybackLoop?()
+            ) { [weak next] _ in
+                DispatchQueue.main.async {
+                    loopCallback?()
+                }
                 next?.seek(to: .zero)
                 next?.play()
             }
@@ -755,7 +771,7 @@ actor EffectsMediaOrchestrator {
         for raw in urls {
             if Task.isCancelled { return }
             if MediaVideoPlayer.isRasterMotionAssetURLString(raw) {
-                await prewarmRemoteImageURLIfNeeded(raw, debugLogTag: debugLogTag)
+                await prewarmRasterMotionURLIfNeeded(raw, debugLogTag: debugLogTag)
             } else {
                 await videoDiskCache.prewarm(
                     remoteURLStrings: [raw],
@@ -771,6 +787,55 @@ actor EffectsMediaOrchestrator {
             if Task.isCancelled { return }
             await prewarmRemoteImageURLIfNeeded(raw, debugLogTag: debugLogTag)
         }
+    }
+
+    private func prewarmRasterMotionURLIfNeeded(_ urlString: String, debugLogTag: String) async {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("http"), !trimmed.isEmpty else { return }
+        #if canImport(SDWebImage)
+        guard let primaryURL = URL(string: trimmed) else { return }
+        let candidates = [primaryURL] + (PreviewMediaURLFallback.fallbackURL(from: primaryURL).map { [$0] } ?? [])
+        for candidate in candidates {
+            guard let cacheKey = SDWebImageManager.shared.cacheKey(for: candidate) else { continue }
+            if SDImageCache.shared.imageFromMemoryCache(forKey: cacheKey) != nil ||
+                SDImageCache.shared.diskImageDataExists(withKey: cacheKey) {
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .effectPreviewVideoCacheUpdated,
+                        object: nil,
+                        userInfo: ["url": trimmed]
+                    )
+                }
+                return
+            }
+            let loaded = await withCheckedContinuation { continuation in
+                SDWebImageManager.shared.loadImage(
+                    with: candidate,
+                    options: [],
+                    context: [.animatedImageClass: SDAnimatedImage.self],
+                    progress: nil
+                ) { image, data, _, _, finished, _ in
+                    guard finished else { return }
+                    let success = image != nil || data != nil
+                    DispatchQueue.main.async {
+                        continuation.resume(returning: success)
+                    }
+                }
+            }
+            if loaded {
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .effectPreviewVideoCacheUpdated,
+                        object: nil,
+                        userInfo: ["url": trimmed]
+                    )
+                }
+                return
+            }
+        }
+        #else
+        await prewarmRemoteImageURLIfNeeded(trimmed, debugLogTag: debugLogTag)
+        #endif
     }
 
     private func prewarmRemoteImageURLIfNeeded(_ urlString: String, debugLogTag: String) async {
@@ -1085,7 +1150,20 @@ actor EffectPreviewVideoDiskCache {
     }
 
     private static func download(remoteURL: URL, to destinationURL: URL) async throws -> URL {
-        let (tempURL, response) = try await URLSession.shared.download(from: remoteURL)
+        do {
+            return try await performDownload(from: remoteURL, to: destinationURL)
+        } catch {
+            // Если исходный CDN недоступен (региональные блокировки), делаем retry по PixVerse URL, вычисленному из имени файла.
+            guard let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: remoteURL),
+                  fallbackURL != remoteURL else {
+                throw error
+            }
+            return try await performDownload(from: fallbackURL, to: destinationURL)
+        }
+    }
+
+    private static func performDownload(from sourceURL: URL, to destinationURL: URL) async throws -> URL {
+        let (tempURL, response) = try await URLSession.shared.download(from: sourceURL)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
@@ -1163,284 +1241,149 @@ private final class PlayerLayerUIView: UIView {
     }
 }
 
-// Animated WebP/GIF через `UIImage` превращается в первый статичный кадр. WKWebView рендерит такие превью как обычный `<img>` и сохраняет анимацию.
-#if canImport(WebKit)
-private struct AnimatedRasterMotionView: UIViewRepresentable {
+// Animated WebP/GIF через `UIImage` превращается в первый статичный кадр; для motion используем SDWebImageSwiftUI + libwebp вместо WKWebView.
+#if canImport(SDWebImageSwiftUI)
+private struct AnimatedRasterMotionView: View {
     let url: URL
+    let shouldPlay: Bool
     let debugLogTag: String?
     let onPlaybackReady: (() -> Void)?
+    @State private var didEmitPlaybackReady = false
+    /// Флаг с `onSuccess`: без него при включении `shouldPlay` после preload родитель не получит ready, т.к. `onSuccess` уже прошёл.
+    @State private var rasterImageDidFinishLoading = false
+    /// Реальный `Binding` для `AnimatedImage`: `get`-only binding не триггерит повторный `updateUIView` после async completion SDWebImage (устаревший снимок `isAnimating`).
+    @State private var isAnimatingForSD: Bool = false
+    /// Текущий URL источника raster-motion: при недоступности R2 переключаемся на PixVerse fallback без смены внешнего API.
+    @State private var activeURL: URL
+    @State private var didTryPixverseFallback = false
 
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.clipsToBounds = true
-        webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.bounces = false
-        webView.scrollView.clipsToBounds = true
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.isUserInteractionEnabled = false
-        context.coordinator.bind(webView: webView, debugLogTag: debugLogTag)
-        return webView
+    init(url: URL, shouldPlay: Bool, debugLogTag: String?, onPlaybackReady: (() -> Void)?) {
+        self.url = url
+        self.shouldPlay = shouldPlay
+        self.debugLogTag = debugLogTag
+        self.onPlaybackReady = onPlaybackReady
+        _activeURL = State(initialValue: url)
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        let urlString = url.absoluteString
-        context.coordinator.currentURLString = urlString
-        context.coordinator.debugLogTag = debugLogTag
-        context.coordinator.onPlaybackReady = onPlaybackReady
-        guard context.coordinator.loadedURLString != urlString else { return }
-
-        context.coordinator.loadedURLString = urlString
-        context.coordinator.prepareNewRasterLoad()
-        webView.isHidden = true
-        if let debugLogTag {
-            // print("\(debugLogTag) MediaVideoPlayer animatedRaster load bounds=\(String(format: "%.1f", webView.bounds.width))x\(String(format: "%.1f", webView.bounds.height)) url=\(urlString.prefix(120))")
-        }
-
-        webView.loadHTMLString(Self.html(for: urlString), baseURL: nil)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    fileprivate static func html(for urlString: String) -> String {
-        let escaped = urlString
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-        return """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-          <style>
-            html, body {
-              margin: 0;
-              padding: 0;
-              width: 100%;
-              height: 100%;
-              overflow: hidden;
-              background: transparent;
-            }
-            img {
-              position: fixed;
-              inset: 0;
-              width: 100%;
-              height: 100%;
-              object-fit: cover;
-              display: block;
-              visibility: hidden;
-            }
-            body[data-raster-state="loaded"] img {
-              visibility: visible;
-            }
-          </style>
-          <script>
-            window.addEventListener('DOMContentLoaded', function() {
-              var img = document.querySelector('img');
-              if (!img) { return; }
-              img.onload = function() {
-                document.body.dataset.rasterState = 'loaded';
-              };
-              img.onerror = function() {
-                document.body.dataset.rasterState = 'broken';
-              };
-              if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                document.body.dataset.rasterState = 'loaded';
-              }
-            });
-          </script>
-        </head>
-        <body>
-          <img src="\(escaped)" alt="">
-        </body>
-        </html>
-        """
-    }
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        /// Повторные `loadHTMLString` при сбое сети/кэша WebKit; после лимита скрываем `WKWebView`, чтобы был виден постер под слоем motion.
-        private static let maxRasterRetries: Int = 3
-
-        var loadedURLString: String?
-        var currentURLString: String?
-        var debugLogTag: String?
-        var onPlaybackReady: (() -> Void)?
-        private var didEmitPlaybackReady = false
-        private weak var webView: WKWebView?
-        private var cacheClearObserver: NSObjectProtocol?
-        private var rasterRetryCounter: Int = 0
-        private var verifyRasterWorkItem: DispatchWorkItem?
-        private var retryRasterWorkItem: DispatchWorkItem?
-
-        func cancelAllRasterDelayedWork() {
-            verifyRasterWorkItem?.cancel()
-            verifyRasterWorkItem = nil
-            retryRasterWorkItem?.cancel()
-            retryRasterWorkItem = nil
-        }
-
-        /// Сброс ретраев при новом URL из SwiftUI: `rasterRetryCounter` остаётся private у координатора.
-        func prepareNewRasterLoad() {
-            cancelAllRasterDelayedWork()
-            rasterRetryCounter = 0
-            didEmitPlaybackReady = false
-        }
-
-        private func emitPlaybackReadyOnce() {
-            guard !didEmitPlaybackReady else { return }
-            didEmitPlaybackReady = true
-            onPlaybackReady?()
-        }
-
-        func bind(webView: WKWebView, debugLogTag: String?) {
-            self.webView = webView
-            self.debugLogTag = debugLogTag
-            webView.navigationDelegate = self
-            guard cacheClearObserver == nil else { return }
-            // После `WKWebsiteDataStore.removeData` in-memory документ может держать старый кадр — перезагружаем тот же `<img>` URL.
-            cacheClearObserver = NotificationCenter.default.addObserver(
-                forName: .nonGalleryPreviewCacheCleared,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self else { return }
-                self.loadedURLString = nil
-                guard let webView = self.webView, let urlString = self.currentURLString else { return }
-                if let tag = self.debugLogTag {
-                    // print("\(tag) MediaVideoPlayer animatedRaster reload after cache clear url=\(urlString.prefix(96))")
-                }
-                self.prepareNewRasterLoad()
-                webView.isHidden = true
-                webView.loadHTMLString(AnimatedRasterMotionView.html(for: urlString), baseURL: nil)
-                self.loadedURLString = urlString
-            }
-        }
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            if let tag = debugLogTag {
-                // print("\(tag) MediaVideoPlayer animatedRaster navigation START bounds=\(String(format: "%.1f", webView.bounds.width))x\(String(format: "%.1f", webView.bounds.height)) url=\((currentURLString ?? "?").prefix(120))")
-            }
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let script = """
-            (function() {
-              var img = document.querySelector('img');
-              if (!img) { return 'img=nil'; }
-              return [
-                'complete=' + img.complete,
-                'natural=' + img.naturalWidth + 'x' + img.naturalHeight,
-                'client=' + img.clientWidth + 'x' + img.clientHeight,
-                'body=' + document.body.clientWidth + 'x' + document.body.clientHeight,
-                'dpr=' + window.devicePixelRatio
-              ].join(' ');
-            })();
-            """
-            webView.evaluateJavaScript(script) { [weak self, weak webView] result, error in
-                guard let self, let webView, let tag = self.debugLogTag else { return }
-                if let error {
-                    // print("\(tag) MediaVideoPlayer animatedRaster navigation FINISH metricsError=\(error.localizedDescription) url=\((self.currentURLString ?? "?").prefix(120))")
+    var body: some View {
+        AnimatedImage(url: activeURL, isAnimating: $isAnimatingForSD)
+            .resizable()
+            .playbackRate(1)
+            // Явно без индикатора SDWebImage: общий лоадер и постер контролирует `PreviewMediaView`.
+            .indicator(nil)
+            .onViewUpdate { view, _ in
+                view.contentMode = .scaleAspectFill
+                view.clipsToBounds = true
+                view.isUserInteractionEnabled = false
+                // После загрузки кадра `configureView` не всегда повторно дергает startAnimating — на detail виден «застывший» первый кадр.
+                // Не полагаемся на `isAnimating`: иногда true, а кадр не бежит (особенно после network decode).
+                if shouldPlay, view.image != nil {
+                    view.startAnimating()
                 } else {
-                    // print("\(tag) MediaVideoPlayer animatedRaster navigation FINISH bounds=\(String(format: "%.1f", webView.bounds.width))x\(String(format: "%.1f", webView.bounds.height)) metrics=\(result ?? "nil") url=\((self.currentURLString ?? "?").prefix(120))")
+                    if view.isAnimating {
+                        view.stopAnimating()
+                    }
+                }
+                guard shouldPlay, view.image != nil else { return }
+                DispatchQueue.main.async {
+                    rasterImageDidFinishLoading = true
+                    notifyPlaybackReadyIfPlaying()
                 }
             }
-
-            // Ресурс `<img>` может догрузиться после main-frame `didFinish`; проверяем natural size и при «битом» кадре даём ретраи вместо иконки вопроса поверх постера.
-            verifyRasterWorkItem?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                self?.verifyRasterImageLoaded(in: webView)
-            }
-            verifyRasterWorkItem = work
-            // WebP в `<img>` иногда получает natural size чуть позже main-frame `didFinish`; не ретраим слишком рано.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.85, execute: work)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            if let tag = debugLogTag {
-                // print("\(tag) MediaVideoPlayer animatedRaster navigation FAIL error=\(error.localizedDescription) url=\((currentURLString ?? "?").prefix(120))")
-            }
-            verifyRasterWorkItem?.cancel()
-            verifyRasterWorkItem = nil
-            scheduleRasterRetry(webView: webView, reason: "didFail")
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if let tag = debugLogTag {
-                // print("\(tag) MediaVideoPlayer animatedRaster navigation PROVISIONAL_FAIL error=\(error.localizedDescription) url=\((currentURLString ?? "?").prefix(120))")
-            }
-            verifyRasterWorkItem?.cancel()
-            verifyRasterWorkItem = nil
-            scheduleRasterRetry(webView: webView, reason: "provisionalFail")
-        }
-
-        private func verifyRasterImageLoaded(in webView: WKWebView) {
-            let script = """
-            (function() {
-              var img = document.querySelector('img');
-              if (!img) return 'noimg';
-              var w = img.naturalWidth, h = img.naturalHeight;
-              if (w > 0 && h > 0) {
-                document.body.dataset.rasterState = 'loaded';
-                return 'ok';
-              }
-              return 'broken';
-            })();
-            """
-            webView.evaluateJavaScript(script) { [weak self, weak webView] result, _ in
-                guard let self, let webView else { return }
-                let status = (result as? String) ?? ""
-                if status == "ok" {
-                    self.rasterRetryCounter = 0
-                    webView.isHidden = false
-                    self.emitPlaybackReadyOnce()
-                    return
+            // `onViewUpdate` вызывается только из `updateUIView`; после async-load SDWebImage второй раз не приходит — ready раньше ловили только после пересоздания ячейки.
+            .onSuccess { _, _, _ in
+                DispatchQueue.main.async {
+                    rasterImageDidFinishLoading = true
+                    notifyPlaybackReadyIfPlaying()
+                    nudgeRasterAnimatingAfterLoad()
                 }
-                self.scheduleRasterRetry(webView: webView, reason: "verify:\(status)")
             }
-        }
-
-        private func scheduleRasterRetry(webView: WKWebView, reason: String) {
-            retryRasterWorkItem?.cancel()
-            rasterRetryCounter += 1
-            guard rasterRetryCounter <= Self.maxRasterRetries else {
-                webView.isHidden = true
-                webView.stopLoading()
-                if let tag = debugLogTag, let u = currentURLString {
-                    // print("\(tag) MediaVideoPlayer animatedRaster GIVE_UP hideWKWebView retries=\(Self.maxRasterRetries) reason=\(reason) url=\(u.prefix(120))")
+            .onFailure { _ in
+                DispatchQueue.main.async {
+                    if tryActivatePixverseFallbackIfNeeded() {
+                        return
+                    }
+                    // Если WebP/GIF не декодировался, завершаем ожидание motion: `PreviewMediaView` вернёт постер вместо вечного тёмного блока/лоадера.
+                    rasterImageDidFinishLoading = true
+                    notifyPlaybackReadyIfPlaying()
                 }
-                emitPlaybackReadyOnce()
-                return
             }
-            if let tag = debugLogTag, let u = currentURLString {
-                // print("\(tag) MediaVideoPlayer animatedRaster RETRY \(rasterRetryCounter)/\(Self.maxRasterRetries) reason=\(reason) url=\(u.prefix(120))")
+            .scaledToFill()
+            .clipped()
+            .allowsHitTesting(false)
+            .onAppear {
+                isAnimatingForSD = shouldPlay
+                if shouldPlay { nudgeRasterAnimatingAfterLoad() }
             }
-            let delay: TimeInterval = 0.35 + 0.2 * Double(rasterRetryCounter)
-            let work = DispatchWorkItem { [weak self, weak webView] in
-                guard let self, let webView, let urlString = self.currentURLString else { return }
-                webView.isHidden = true
-                webView.loadHTMLString(AnimatedRasterMotionView.html(for: urlString), baseURL: nil)
+            .onChange(of: url) { _, _ in
+                didEmitPlaybackReady = false
+                rasterImageDidFinishLoading = false
+                didTryPixverseFallback = false
+                activeURL = url
+                isAnimatingForSD = shouldPlay
             }
-            retryRasterWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-        }
+            .onChange(of: shouldPlay) { _, isPlaying in
+                isAnimatingForSD = isPlaying
+                if !isPlaying {
+                    didEmitPlaybackReady = false
+                } else {
+                    notifyPlaybackReadyIfPlaying()
+                    // Декод мог завершиться на соседнем слайде (`shouldPlay == false`); при активации слоя нужен ещё один проход configure.
+                    nudgeRasterAnimatingAfterLoad()
+                }
+            }
+    }
 
-        deinit {
-            cancelAllRasterDelayedWork()
-            if let cacheClearObserver {
-                NotificationCenter.default.removeObserver(cacheClearObserver)
+    /// Для регионов с недоступным `*.r2.dev`: один автоматический retry по PixVerse URL, собранному из исходного имени файла.
+    private func tryActivatePixverseFallbackIfNeeded() -> Bool {
+        guard !didTryPixverseFallback,
+              let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: url),
+              fallbackURL != activeURL else {
+            return false
+        }
+        didTryPixverseFallback = true
+        didEmitPlaybackReady = false
+        rasterImageDidFinishLoading = false
+        activeURL = fallbackURL
+        isAnimatingForSD = shouldPlay
+        if shouldPlay {
+            nudgeRasterAnimatingAfterLoad()
+        }
+        return true
+    }
+
+    /// Completion SDWebImage дергает `finishUpdateView` со снимком `AnimatedImage`, где `isAnimating` мог быть false (preload); без смены `Binding` SwiftUI не пересобирает representable — анимация не стартует.
+    private func nudgeRasterAnimatingAfterLoad() {
+        guard shouldPlay else { return }
+        DispatchQueue.main.async {
+            guard shouldPlay else { return }
+            isAnimatingForSD = false
+            DispatchQueue.main.async {
+                guard shouldPlay else { return }
+                isAnimatingForSD = true
             }
+        }
+    }
+
+    private func notifyPlaybackReadyIfPlaying() {
+        guard shouldPlay else { return }
+        guard rasterImageDidFinishLoading else { return }
+        emitPlaybackReadyOnce()
+    }
+
+    private func emitPlaybackReadyOnce() {
+        guard !didEmitPlaybackReady else { return }
+        didEmitPlaybackReady = true
+        let callback = onPlaybackReady
+        DispatchQueue.main.async {
+            callback?()
         }
     }
 }
 #else
 private struct AnimatedRasterMotionView: View {
     let url: URL
+    let shouldPlay: Bool
     let debugLogTag: String?
     let onPlaybackReady: (() -> Void)?
     @State private var didEmitPlaybackReady = false
@@ -1451,9 +1394,12 @@ private struct AnimatedRasterMotionView: View {
                 .resizable()
                 .scaledToFill()
                 .onAppear {
-                    guard !didEmitPlaybackReady else { return }
+                    guard shouldPlay, !didEmitPlaybackReady else { return }
                     didEmitPlaybackReady = true
-                    onPlaybackReady?()
+                    let callback = onPlaybackReady
+                    DispatchQueue.main.async {
+                        callback?()
+                    }
                 }
         } placeholder: {
             Color.clear
@@ -1461,13 +1407,18 @@ private struct AnimatedRasterMotionView: View {
         .onChange(of: url) { _, _ in
             didEmitPlaybackReady = false
         }
+        .onChange(of: shouldPlay) { _, isPlaying in
+            if !isPlaying {
+                didEmitPlaybackReady = false
+            }
+        }
     }
 }
 #endif
 
-// Debug «Clear Cache»: `ImageDownloader` + диск MP4 превью + данные WebKit (кэш WKWebView для animated WebP); не трогает `GalleryThumbnailCache` и локальные файлы галереи.
+// Debug «Clear Cache»: `ImageDownloader` + диск MP4 превью + SDWebImage/WebP cache; не трогает `GalleryThumbnailCache` и локальные файлы галереи.
 enum NonGalleryMediaCacheCleaner {
-    /// Оценка размера на диске до `clearAll()`: каталоги `ImageCache` + `EffectPreviewVideos`. Данные WebKit без публичного размера записей не суммируем.
+    /// Оценка размера на диске до `clearAll()`: каталоги `ImageCache` + `EffectPreviewVideos`. SDWebImage хранит WebP в своём cache namespace и очищается отдельно.
     static func estimatedDiskBytesBeforeClear() -> Int64 {
         ImageDownloader.shared.estimatedDiskCacheBytes() + EffectPreviewVideoDiskCache.estimatedDiskUsageBytes()
     }
@@ -1477,26 +1428,21 @@ enum NonGalleryMediaCacheCleaner {
             ImageDownloader.shared.clearCache()
         }
         await EffectPreviewVideoDiskCache.shared.clearAll()
-        #if canImport(WebKit)
-        await clearWebKitPreviewWebsiteData()
+        #if canImport(SDWebImage)
+        await clearSDWebImagePreviewCache()
         #endif
         await MainActor.run {
             NotificationCenter.default.post(name: .nonGalleryPreviewCacheCleared, object: nil)
         }
     }
 
-    #if canImport(WebKit)
-    /// Animated WebP в карточках идёт через `WKWebView`; без сброса `WKWebsiteDataStore` картинки остаются в дисковом кэше WebKit после «Очистить кэш».
-    private static func clearWebKitPreviewWebsiteData() async {
-        // `WKWebsiteDataStore` — `@MainActor`; цепочка fetch + remove по записям — актуальный API без предупреждения про completion-handler `removeData(ofTypes:modifiedSince:)`.
+    #if canImport(SDWebImage)
+    /// Animated WebP теперь кэшируется SDWebImage; debug clear должен убирать и memory, и disk cache, иначе старый WebP может оставаться после замены URL/ресурса.
+    private static func clearSDWebImagePreviewCache() async {
+        SDImageCache.shared.clearMemory()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            Task { @MainActor in
-                let types = WKWebsiteDataStore.allWebsiteDataTypes()
-                WKWebsiteDataStore.default().fetchDataRecords(ofTypes: types) { records in
-                    WKWebsiteDataStore.default().removeData(ofTypes: types, for: records) {
-                        continuation.resume()
-                    }
-                }
+            SDImageCache.shared.clearDisk {
+                continuation.resume()
             }
         }
     }

@@ -272,15 +272,34 @@ struct MediaDetailView: View {
 
                         ZStack {
                         HStack {
-                            Button(action: {
-                                onDismiss()
-                            }) {
-                                Image(systemName: "chevron.left")
-                                    .font(.title2)
-                                    .foregroundColor(AppTheme.Colors.textPrimary)
-                                    .frame(width: 44, height: 44)
+                            ZStack(alignment: .leading) {
+                                Button(action: { onDismiss() }) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.title2)
+                                        .foregroundColor(AppTheme.Colors.textPrimary)
+                                        .frame(
+                                            width: AppTheme.Layout.navigationBarSideControlSize,
+                                            height: AppTheme.Layout.navigationBarSideControlSize
+                                        )
+                                }
+                                .appPlainButtonStyle()
+
+                                Button(action: { onDismiss() }) {
+                                    Color.clear
+                                        .frame(
+                                            width: AppTheme.Layout.navigationBarBackButtonHitAreaWidth,
+                                            height: AppTheme.Layout.navigationBarBackButtonHitAreaHeight
+                                        )
+                                        .contentShape(Rectangle())
+                                }
+                                .appPlainButtonStyle()
+                                .offset(x: -AppTheme.Layout.navigationBarBackButtonLeadingInset)
                             }
-                            .appPlainButtonStyle()
+                            .frame(
+                                width: AppTheme.Layout.navigationBarSideControlSize,
+                                height: AppTheme.Layout.navigationBarSideControlSize,
+                                alignment: .leading
+                            )
 
                             Spacer()
 

@@ -1,5 +1,9 @@
 import Foundation
 import YandexMobileMetrica
+#if canImport(YandexMobileMetricaCrashes)
+// Бинарный модуль крашей обязателен, если в `YMMYandexMetricaConfiguration` включён crashReporting (по умолчанию YES); иначе SDK шлёт «framework not found».
+import YandexMobileMetricaCrashes
+#endif
 import FirebaseCore
 import FirebaseAnalytics
 import FirebaseCrashlytics
@@ -97,6 +101,8 @@ class AppAnalyticsService {
         #endif
         
         if let config = configuration {
+            // Явно оставляем дефолт YES: без линковки `YandexMobileMetricaCrashes` в таргет отправка ошибок/крашей не работает.
+            config.crashReporting = true
             YMMYandexMetrica.activate(with: config)
             print("✅ [AppAnalytics] AppMetrica initialized with API key: \(apiKey)")
         } else {
@@ -115,6 +121,11 @@ class AppAnalyticsService {
     }
     
     private func initializeAppsFlyer() {
+        guard ConfigurationManager.shared.isAppsFlyerConfigured else {
+            print("ℹ️ [AppAnalytics] AppsFlyer пропущен: нет валидных APPSFLYER_DEV_KEY и/или APP_STORE_ID в APIKeys.plist")
+            return
+        }
+
         do {
             let devKey = try ConfigurationManager.shared.getRequiredValue(for: .appsFlyerDevKey)
             let rawAppStoreID = try ConfigurationManager.shared.getRequiredValue(for: .appStoreID)
@@ -266,6 +277,7 @@ class AppAnalyticsService {
             }
             
             group.addTask {
+                guard ConfigurationManager.shared.isAppsFlyerConfigured else { return }
                 AppsFlyerLib.shared().customerUserID = userID
                 // AppsFlyer User ID set
             }
@@ -326,6 +338,7 @@ class AppAnalyticsService {
             
             // AppsFlyer Revenue
             group.addTask {
+                guard ConfigurationManager.shared.isAppsFlyerConfigured else { return }
                 AppsFlyerLib.shared().logEvent(AFEventPurchase, withValues: [
                     AFEventParamRevenue: price,
                     AFEventParamCurrency: currency,
@@ -421,8 +434,15 @@ class AppAnalyticsService {
     }
     
     private func reportToAppsFlyer(event: String, parameters: [String: Any]?) async {
+        guard ConfigurationManager.shared.isAppsFlyerConfigured else { return }
         AppsFlyerLib.shared().logEvent(event, withValues: parameters)
         // AppsFlyer event reported
+    }
+
+    /// Прямые вызовы `logEvent` вне `reportEvent`: те же условия, что и для `start()`.
+    private func appsFlyerLogEvent(_ name: String, withValues values: [AnyHashable: Any]?) {
+        guard ConfigurationManager.shared.isAppsFlyerConfigured else { return }
+        AppsFlyerLib.shared().logEvent(name, withValues: values)
     }
 }
 
@@ -494,7 +514,7 @@ extension AppAnalyticsService {
         
         // Также отправляем стандартные события
         Analytics.logEvent(AnalyticsEventAppOpen, parameters: nil)
-        AppsFlyerLib.shared().logEvent("app_open", withValues: nil)
+        appsFlyerLogEvent("app_open", withValues: nil)
     }
     
     /// Отправить событие начала генерации
@@ -529,7 +549,7 @@ extension AppAnalyticsService {
             "generation_count": generationCount
         ])
         
-        AppsFlyerLib.shared().logEvent(AFEventPurchase, withValues: [
+        appsFlyerLogEvent(AFEventPurchase, withValues: [
             AFEventParamRevenue: 1.0,
             AFEventParamCurrency: "USD",
             "generation_count": generationCount
@@ -566,7 +586,7 @@ extension AppAnalyticsService {
             AnalyticsParameterItemCategory: "Photo Upload"
         ])
         
-        AppsFlyerLib.shared().logEvent(AFEventAddToCart, withValues: [
+        appsFlyerLogEvent(AFEventAddToCart, withValues: [
             AFEventParamContent: photoId,
             AFEventParamContentType: "Photo Upload"
         ])
@@ -588,7 +608,7 @@ extension AppAnalyticsService {
             AnalyticsParameterItemCategory: effectSectionName
         ])
         
-        AppsFlyerLib.shared().logEvent(AFEventContentView, withValues: [
+        appsFlyerLogEvent(AFEventContentView, withValues: [
             AFEventParamContent: effectPresetName,
             AFEventParamContentType: effectSectionName
         ])
@@ -602,7 +622,7 @@ extension AppAnalyticsService {
         
         // Также отправляем стандартные события
         Analytics.logEvent("paywall_shown", parameters: nil)  // Кастомное событие вместо покупки
-        AppsFlyerLib.shared().logEvent(AFEventInitiatedCheckout, withValues: nil)
+        appsFlyerLogEvent(AFEventInitiatedCheckout, withValues: nil)
     }
     
     /// Отправить событие покупки подписки
@@ -622,7 +642,7 @@ extension AppAnalyticsService {
             AnalyticsParameterCurrency: currency
         ])
         
-        AppsFlyerLib.shared().logEvent(AFEventPurchase, withValues: [
+        appsFlyerLogEvent(AFEventPurchase, withValues: [
             AFEventParamContent: productId,
             AFEventParamContentType: productName,
             AFEventParamRevenue: price,
@@ -646,7 +666,7 @@ extension AppAnalyticsService {
             "photo_type": "generated_image"
         ])
         
-        AppsFlyerLib.shared().logEvent("photo_deleted", withValues: [
+        appsFlyerLogEvent("photo_deleted", withValues: [
             "photo_id": photoId,
             "photo_type": "generated_image"
         ])
@@ -660,7 +680,7 @@ extension AppAnalyticsService {
         
         // Также отправляем кастомные события
         Analytics.logEvent("settings_opened", parameters: nil)
-        AppsFlyerLib.shared().logEvent("settings_opened", withValues: nil)
+        appsFlyerLogEvent("settings_opened", withValues: nil)
     }
     
     /// Отправить событие открытия галереи. Выполняется с utility-приоритетом вне main: тяжёлые SDK не блокируют кадр.
@@ -687,6 +707,6 @@ extension AppAnalyticsService {
         
         // Также отправляем стандартные события
         Analytics.logEvent(AnalyticsEventTutorialComplete, parameters: nil)
-        AppsFlyerLib.shared().logEvent("tutorial_complete", withValues: nil)
+        appsFlyerLogEvent("tutorial_complete", withValues: nil)
     }
 } 

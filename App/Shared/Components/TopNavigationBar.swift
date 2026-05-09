@@ -41,20 +41,43 @@ struct TopNavigationBar: View {
         self.onRightTap = onRightTap
     }
     
+    /// Ширина колонки под стрелку/спейсер в разметке — 28 pt, как изначально в `TopNavigationBar`; расширенный тап не увеличивает её.
+    private var navigationHStackSideWidth: CGFloat {
+        AppTheme.Layout.navigationBarHStackSideSlotWidth
+    }
+
+    private var navigationSideControlHeight: CGFloat {
+        AppTheme.Layout.navigationBarSideControlSize
+    }
+
     var body: some View {
         HStack {
-            // Left button (Back or spacer)
+            // Left: визуальный слот 28 pt (как раньше) + невидимая hit-area storecards-паттерна, выступающая влево.
             if showBackButton {
-                Button(action: onBackTap) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(AppTheme.Colors.textPrimary)
+                ZStack(alignment: .leading) {
+                    Button(action: onBackTap) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(AppTheme.Colors.textPrimary)
+                            .frame(width: navigationHStackSideWidth, height: navigationSideControlHeight)
+                    }
+                    .appPlainButtonStyle()
+
+                    Button(action: onBackTap) {
+                        Color.clear
+                            .frame(
+                                width: AppTheme.Layout.navigationBarBackButtonHitAreaWidth,
+                                height: AppTheme.Layout.navigationBarBackButtonHitAreaHeight
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .appPlainButtonStyle()
+                    .offset(x: -AppTheme.Layout.navigationBarBackButtonLeadingInset)
                 }
-                .appPlainButtonStyle()
-                .frame(width: 28)
+                .frame(width: navigationHStackSideWidth, height: navigationSideControlHeight, alignment: .leading)
             } else if titleAlignment == .center {
                 Spacer()
-                    .frame(width: 28)
+                    .frame(width: navigationHStackSideWidth)
             } else {
                 // Для leading-тайтла не резервируем место под "невидимую" стрелку.
                 Color.clear
@@ -81,12 +104,12 @@ struct TopNavigationBar: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(rightButtonColor ?? AppTheme.Colors.textPrimary)
                         .opacity(0.9)
+                        .frame(width: navigationHStackSideWidth, height: navigationSideControlHeight)
                 }
                 .appPlainButtonStyle()
-                .frame(width: 28)
             } else {
                 Spacer()
-                    .frame(width: 28)
+                    .frame(width: navigationHStackSideWidth)
             }
         }
         .padding(EdgeInsets(top: 24, leading: 16, bottom: 16, trailing: 16))

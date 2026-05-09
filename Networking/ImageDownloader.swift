@@ -9,6 +9,31 @@ extension Notification.Name {
     static let nonGalleryPreviewCacheCleared = Notification.Name("nonGalleryPreviewCacheCleared")
 }
 
+/// Фолбек превью-медиа для регионов, где `*.r2.dev` может быть недоступен:
+/// из исходного имени файла строим PixVerse URL, сохраняя исходное расширение.
+enum PreviewMediaURLFallback {
+    private static let blockedHostToken = "r2.dev"
+    private static let pixverseBase = "https://media.pixverse.ai/"
+
+    static func fallbackURLString(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let sourceURL = URL(string: trimmed) else { return nil }
+        return fallbackURL(from: sourceURL)?.absoluteString
+    }
+
+    static func fallbackURL(from sourceURL: URL) -> URL? {
+        guard let host = sourceURL.host?.lowercased(), host.contains(blockedHostToken) else { return nil }
+        let fileName = sourceURL.lastPathComponent.removingPercentEncoding ?? sourceURL.lastPathComponent
+        guard !fileName.isEmpty else { return nil }
+        var pixversePath = fileName
+        for _ in 0..<2 {
+            guard let idx = pixversePath.firstIndex(of: "_") else { return nil }
+            pixversePath.replaceSubrange(idx...idx, with: "/")
+        }
+        return URL(string: pixverseBase + pixversePath)
+    }
+}
+
 /// Протокол для скачивания и кэширования изображений
 public protocol ImageDownloaderProtocol {
     /// Скачивает изображение по URL и сохраняет локально (`effectPreviewLogTag` — опциональные логи превью эффектов).
@@ -236,30 +261,78 @@ public class ImageDownloader: ImageDownloaderProtocol {
             return
         }
         
-        // Проверяем кэш на диске для remote изображений (и legacy full URL, и стабильный путь без query).
-        for cachedPath in diskCachePaths(for: url) {
-            if fileManager.fileExists(atPath: cachedPath.path) {
-                elog("disk file EXISTS path.suffix=\(String(cachedPath.path.suffix(64)))")
-                if let diskImage = UIImage(contentsOfFile: cachedPath.path) {
-                    elog("disk UIImage OK size=\(diskImage.size); warming memoryCache key=fullURLString+normalized")
-                    let memKey = NSString(string: url)
-                    let normalizedMemKey = NSString(string: normalizedRemoteMemoryCacheKey(for: url))
-                    memoryCache.setObject(diskImage, forKey: memKey)
-                    memoryCache.setObject(diskImage, forKey: normalizedMemKey)
-                    Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
-                    completion(.success(cachedPath.path))
-                    return
-                } else {
-                    elog("disk file UNREADABLE as UIImage → remove and continue")
-                    print("⚠️ [ImageDownloader] Corrupted cached file, removing: \(cachedPath.path)")
-                    try? fileManager.removeItem(atPath: cachedPath.path)
+        let fallbackURLString = PreviewMediaURLFallback.fallbackURLString(from: url)
+        let candidateURLs = [url] + (fallbackURLString.map { [$0] } ?? [])
+        let originalMemKey = NSString(string: url)
+        let originalNormalizedMemKey = NSString(string: normalizedRemoteMemoryCacheKey(for: url))
+
+        func warmOriginalKeys(with image: UIImage) {
+            memoryCache.setObject(image, forKey: originalMemKey)
+            memoryCache.setObject(image, forKey: originalNormalizedMemKey)
+        }
+
+        func persistOriginalAliasIfNeeded(from sourcePath: String) {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            for target in diskCachePaths(for: url) where target.path != sourcePath {
+                if fileManager.fileExists(atPath: target.path) { continue }
+                try? fileManager.copyItem(at: sourceURL, to: target)
+            }
+        }
+
+        // Проверяем кэш на диске: сначала исходный URL, затем fallback URL.
+        for candidate in candidateURLs {
+            for cachedPath in diskCachePaths(for: candidate) {
+                if fileManager.fileExists(atPath: cachedPath.path) {
+                    elog("disk file EXISTS path.suffix=\(String(cachedPath.path.suffix(64)))")
+                    if let diskImage = UIImage(contentsOfFile: cachedPath.path) {
+                        elog("disk UIImage OK size=\(diskImage.size); warming memoryCache key=fullURLString+normalized")
+                        let candidateMemKey = NSString(string: candidate)
+                        let candidateNormalizedMemKey = NSString(string: normalizedRemoteMemoryCacheKey(for: candidate))
+                        memoryCache.setObject(diskImage, forKey: candidateMemKey)
+                        memoryCache.setObject(diskImage, forKey: candidateNormalizedMemKey)
+                        warmOriginalKeys(with: diskImage)
+                        if candidate != url {
+                            persistOriginalAliasIfNeeded(from: cachedPath.path)
+                        }
+                        Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
+                        completion(.success(cachedPath.path))
+                        return
+                    } else {
+                        elog("disk file UNREADABLE as UIImage → remove and continue")
+                        print("⚠️ [ImageDownloader] Corrupted cached file, removing: \(cachedPath.path)")
+                        try? fileManager.removeItem(atPath: cachedPath.path)
+                    }
                 }
             }
         }
 
         elog("no disk file → downloadAndCache network")
-        // Скачиваем изображение
-        downloadAndCache(url: url, effectPreviewLogTag: effectPreviewLogTag, completion: completion)
+        // Если исходный CDN недоступен, повторяем попытку через PixVerse fallback.
+        func attemptDownload(at index: Int) {
+            guard index < candidateURLs.count else {
+                completion(.failure(.invalidResponse))
+                return
+            }
+            let candidate = candidateURLs[index]
+            downloadAndCache(url: candidate, effectPreviewLogTag: effectPreviewLogTag) { result in
+                switch result {
+                case .success(let path):
+                    if candidate != url, let image = UIImage(contentsOfFile: path) {
+                        warmOriginalKeys(with: image)
+                        persistOriginalAliasIfNeeded(from: path)
+                        Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
+                    }
+                    completion(.success(path))
+                case .failure(let error):
+                    if index + 1 < candidateURLs.count {
+                        attemptDownload(at: index + 1)
+                    } else {
+                        completion(.failure(error))
+                    }
+                }
+            }
+        }
+        attemptDownload(at: 0)
     }
     
     public func preloadImage(from url: String) {
@@ -290,8 +363,8 @@ public class ImageDownloader: ImageDownloaderProtocol {
                 }
             }
             
-            // Скачиваем если нет в кэше (без блокировки)
-            self.downloadAndCache(url: url, effectPreviewLogTag: nil) { result in
+            // Скачиваем если нет в кэше (без блокировки); внутри `downloadImage` уже есть fallback на PixVerse.
+            self.downloadImage(from: url, effectPreviewLogTag: nil) { result in
                 switch result {
                 case .success(let localPath):
                     // Загружаем изображение в memory cache

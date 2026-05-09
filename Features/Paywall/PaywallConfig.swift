@@ -108,7 +108,7 @@ struct PaywallConfig: Codable {
         let generationLimits: [String: Int]?
         /// Рельсы главной и «View all»: включать motion-превью карточек.
         let effectsCatalogAllowsMotionPreview: Bool?
-        /// Показывать ли постер до старта motion.
+        /// Постер каталога до motion: `true` — jpeg может быть виден, пока грузится превью; `false` — для WebP/GIF до готового motion не показываем ни jpeg, ни лоадер, а для mp4 при «холодном» старте постер всё же держим до готовности плеера (см. `PreviewMediaView`).
         let effectsCatalogShowPosterBeforeMotion: Bool?
         /// Стартовый баланс токенов для token wallet.
         let startingTokenBalance: Int?

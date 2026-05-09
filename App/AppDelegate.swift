@@ -4,6 +4,10 @@ import FirebaseAnalytics
 #if canImport(AppsFlyerLib)
 import AppsFlyerLib
 #endif
+#if canImport(SDWebImage) && canImport(SDWebImageWebPCoder)
+import SDWebImage
+import SDWebImageWebPCoder
+#endif
 import Adapty
 import UIKit
 
@@ -20,6 +24,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
         
         // UIKit-окно прозрачное — весь фон рисует SwiftUI.
         configureStatusBarAppearance()
+        configureAnimatedWebPDecoding()
 
         // --- Adapty ---
         do {
@@ -53,9 +58,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
     
     /// Вызывается через NotificationCenter при каждом выходе приложения на передний план (и при первом старте).
     @objc private func didBecomeActiveNotification() {
-        print("🔍 [AppDelegate] didBecomeActiveNotification → starting AppsFlyer...")
-        AppsFlyerLib.shared().start()
-        print("✅ [AppDelegate] AppsFlyer started")
+        if ConfigurationManager.shared.isAppsFlyerConfigured {
+            print("🔍 [AppDelegate] didBecomeActiveNotification → starting AppsFlyer...")
+            AppsFlyerLib.shared().start()
+            print("✅ [AppDelegate] AppsFlyer started")
+        }
         
         configureStatusBarAppearance()
         Task { @MainActor in
@@ -66,6 +73,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
     // MARK: - Status Bar Configuration
     private func configureStatusBarAppearance() {
         AppTheme.syncWindowBackgroundWithTheme()
+    }
+
+    /// Animated WebP превью рендерим через SDWebImage/libwebp, а не через WKWebView: так быстрее старт, корректнее frame timing и меньше WebContent-процессов.
+    private func configureAnimatedWebPDecoding() {
+        #if canImport(SDWebImage) && canImport(SDWebImageWebPCoder)
+        SDImageCodersManager.shared.addCoder(SDImageWebPCoder.shared)
+        #endif
     }
     
     // MARK: - AppsFlyer Delegate
@@ -93,7 +107,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
     /// Deep links: AppsFlyer (OneLink / URI) и кастомная схема `aivideo`.
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         // OneLink / URI-схемы: без вызова handleOpen атрибуция AppsFlyer по ссылкам не заработает (базовые install-события — отдельно).
-        AppsFlyerLib.shared().handleOpen(url, options: options)
+        if ConfigurationManager.shared.isAppsFlyerConfigured {
+            AppsFlyerLib.shared().handleOpen(url, options: options)
+        }
 
         print("🔗 [AppDelegate] Deep link received: \(url)")
         
@@ -111,7 +127,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
         // Universal Links для OneLink: передаём в AppsFlyer до собственной логики (см. sample AppsFlyer).
         // `continue` — ключевое слово Swift; closure из UIApplicationDelegate имеет тип [UIUserActivityRestoring]?, а SDK ожидает другую сигнатуру — из‑за этого «ambiguous»; в sample AppsFlyer передают nil.
-        AppsFlyerLib.shared().`continue`(userActivity, restorationHandler: nil)
+        if ConfigurationManager.shared.isAppsFlyerConfigured {
+            AppsFlyerLib.shared().`continue`(userActivity, restorationHandler: nil)
+        }
 
         if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
            let url = userActivity.webpageURL {

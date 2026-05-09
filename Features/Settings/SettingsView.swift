@@ -567,9 +567,10 @@ struct SettingsView: View {
     private func openContactForm() {
         contactMessageDraft = ""
         contactEmailDraft = ""
+        // Без подзаголовка между заголовком и полем — только title + textarea (см. `DynamicModal` пустое `description`).
         let config = DynamicModalConfig.multiLineInput(
             title: "contact_us".localized,
-            description: "contact_description".localized,
+            description: "",
             placeholder: "contact_message_placeholder".localized,
             inputText: $contactMessageDraft,
             allowDismissOnBackgroundTap: true,

@@ -101,11 +101,16 @@ struct EffectCatalogRailCard: View {
         .contentShape(Rectangle())
         .onAppear {
             isVisibleInHierarchy = true
-            onVisibilityChanged?(true)
+            // Иначе родитель (`EffectsHomeView`) меняет `@State` в том же проходе layout, что и появление ячейки — SwiftUI предупреждает про undefined behavior.
+            DispatchQueue.main.async {
+                onVisibilityChanged?(true)
+            }
         }
         .onDisappear {
             isVisibleInHierarchy = false
-            onVisibilityChanged?(false)
+            DispatchQueue.main.async {
+                onVisibilityChanged?(false)
+            }
         }
     }
 

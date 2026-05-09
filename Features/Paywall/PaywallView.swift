@@ -247,7 +247,7 @@ struct PaywallView: View {
                     if let heroVideoURL = PaywallHeroTopMedia.heroVideoPlaybackURL {
                         VStack(spacing: 0) {
                             // Paywall hero держим на 7% громкости для единообразия с остальными экранами.
-                            LoopingVideoPlayer(playbackURL: heroVideoURL, playbackVolume: 0.07)
+                            LoopingVideoPlayer(playbackURL: heroVideoURL, playbackVolume: 0.05)
                                 .frame(height: PaywallHeroTopMedia.heroFrameHeight())
                                 .mask(
                                     LinearGradient(

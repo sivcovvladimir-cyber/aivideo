@@ -72,6 +72,10 @@
 		FA89A8C12E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C02E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift */; };
 		FA89A8C32E37A38000F5A9F6 /* ContactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C22E37A38000F5A9F6 /* ContactService.swift */; };
 		FA8A8F6D2E439E720091D637 /* YandexMobileMetrica in Frameworks */ = {isa = PBXBuildFile; productRef = FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */; };
+		FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */ = {isa = PBXBuildFile; productRef = FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */; };
+		FA9D01082F70000100D00008 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01022F70000100D00002 /* SDWebImageSwiftUI */; };
+		FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01032F70000100D00003 /* SDWebImageWebPCoder */; };
+		FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01042F70000100D00004 /* SDWebImage */; };
 		FA8A8F712E43A83E0091D637 /* AppAnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8A8F702E43A83E0091D637 /* AppAnalyticsService.swift */; };
 		FA9501922E2EA993001E9F2E /* PaywallConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501912E2EA993001E9F2E /* PaywallConfig.swift */; };
 		FA9501952E2EB536001E9F2E /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501942E2EB536001E9F2E /* AppTheme.swift */; };
@@ -282,6 +286,10 @@
 				FAD6533D2E0C8D0B0030B880 /* FirebaseCrashlytics in Frameworks */,
 				FAD653372E0C8CE50030B880 /* AdaptyUI in Frameworks */,
 				FA8A8F6D2E439E720091D637 /* YandexMobileMetrica in Frameworks */,
+				FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */,
+				FA9D01082F70000100D00008 /* SDWebImageSwiftUI in Frameworks */,
+				FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */,
+				FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */,
 				FAD653332E0C8CE50030B880 /* Adapty in Frameworks */,
 				FAD653352E0C8CE50030B880 /* AdaptyPlugin in Frameworks */,
 			);
@@ -712,6 +720,10 @@
 				FAD6533A2E0C8D0B0030B880 /* FirebaseAnalytics */,
 				FAD6533C2E0C8D0B0030B880 /* FirebaseCrashlytics */,
 				FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */,
+				FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */,
+				FA9D01022F70000100D00002 /* SDWebImageSwiftUI */,
+				FA9D01032F70000100D00003 /* SDWebImageWebPCoder */,
+				FA9D01042F70000100D00004 /* SDWebImage */,
 			);
 			productName = aivideo;
 			productReference = FA6070A62E0C78850047A0A9 /* aivideo.app */;
@@ -751,6 +763,9 @@
 				FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				FAF17B1E2E0AF93C00A34D7E /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */,
 				FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */,
+				FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */,
+				FA9D01062F70000100D00006 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
+				FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FAF179732E0AE98600A34D7E /* Products */;
@@ -1013,7 +1028,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1042,7 +1057,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1065,7 +1080,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1094,7 +1109,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1280,6 +1295,30 @@
 				minimumVersion = 3.8.1;
 			};
 		};
+		FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImageSwiftUI";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.1.0;
+			};
+		};
+		FA9D01062F70000100D00006 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImageWebPCoder";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.15.0;
+			};
+		};
+		FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImage";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.21.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1287,6 +1326,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
 			productName = YandexMobileMetrica;
+		};
+		FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
+			productName = YandexMobileMetricaCrashes;
+		};
+		FA9D01022F70000100D00002 /* SDWebImageSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */;
+			productName = SDWebImageSwiftUI;
+		};
+		FA9D01032F70000100D00003 /* SDWebImageWebPCoder */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA9D01062F70000100D00006 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */;
+			productName = SDWebImageWebPCoder;
+		};
+		FA9D01042F70000100D00004 /* SDWebImage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */;
+			productName = SDWebImage;
 		};
 		FAD653322E0C8CE50030B880 /* Adapty */ = {
 			isa = XCSwiftPackageProductDependency;

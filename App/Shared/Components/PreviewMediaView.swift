@@ -1,5 +1,8 @@
 import SwiftUI
 import UIKit
+#if canImport(SDWebImage)
+import SDWebImage
+#endif
 
 // Общий медиа-слой для превью-плиток: постер может быть remote URL или уже загруженным UIImage, motion-слой поверх — локальное/remote видео или WebP.
 struct PreviewMediaView<Placeholder: View>: View {
@@ -26,6 +29,7 @@ struct PreviewMediaView<Placeholder: View>: View {
     @State private var lastLoggedGeometrySignature: String?
     @State private var isMotionPlaybackReady = false
     @State private var isMotionCachedOnDisk = false
+    @State private var motionReadinessGeneration = 0
     /// Remote постер после фоновой подгрузки, пока на экране был bundled (см. `poster`).
     @State private var upgradedRemotePoster: UIImage?
     /// Инвалидирует in-flight `downloadImage`, если сменился URL постера или сбросили кэш картинок.
@@ -93,11 +97,16 @@ struct PreviewMediaView<Placeholder: View>: View {
                         debugLogTag: debugLogTag,
                         playbackVolumeOverride: motionPlaybackVolumeOverride,
                         onPlaybackReady: {
-                            if let tag = debugLogTag {
-                                // print("\(tag) PreviewMediaView onPlaybackReady context=\(debugContext ?? "?") suppressPoster=\(shouldSuppressPosterUntilMotionReady) cachedOnDisk=\(isMotionCachedOnDisk)")
+                            // Двойная страховка вместе с отложенным колбэком в `MediaVideoPlayer`: не обновляем родительский `@State` синхронно из цепочки готовности слоя.
+                            let generation = motionReadinessGeneration
+                            DispatchQueue.main.async {
+                                guard motionReadinessGeneration == generation, shouldInstantiateMotionLayer else { return }
+                                if let tag = debugLogTag {
+                                    // print("\(tag) PreviewMediaView onPlaybackReady context=\(debugContext ?? "?") suppressPoster=\(shouldSuppressPosterUntilMotionReady) cachedOnDisk=\(isMotionCachedOnDisk)")
+                                }
+                                isMotionPlaybackReady = true
+                                onMotionPlaybackReady?()
                             }
-                            isMotionPlaybackReady = true
-                            onMotionPlaybackReady?()
                         },
                         onPlaybackLoop: onMotionPlaybackLoop
                     )
@@ -282,8 +291,8 @@ struct PreviewMediaView<Placeholder: View>: View {
         let lower = motionURL.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
             .first.map(String.init)?
             .lowercased() ?? motionURL.lowercased()
-        if lower.hasSuffix(".webp") || lower.hasSuffix("%2ewebp") { return "animated-raster-webp-wkwebview" }
-        if lower.hasSuffix(".gif") || lower.hasSuffix("%2egif") { return "animated-raster-gif-wkwebview" }
+        if lower.hasSuffix(".webp") || lower.hasSuffix("%2ewebp") { return "animated-raster-webp-sdwebimage" }
+        if lower.hasSuffix(".gif") || lower.hasSuffix("%2egif") { return "animated-raster-gif-sdwebimage" }
         if lower.hasSuffix(".mp4") || lower.hasSuffix(".mov") || lower.hasSuffix(".m4v") { return "video-avplayer" }
         return "unknown"
     }
@@ -301,7 +310,7 @@ struct PreviewMediaView<Placeholder: View>: View {
         !suppressesPosterBecauseMotionIsCached && !suppressesPosterBeforeMotionByPolicy && !shouldShowLoadingOverlay
     }
 
-    /// Motion уже в локальном кэше (AV — `EffectPreviewVideoDiskCache`, WebP/GIF — `ImageDownloader`): скрываем постер до готовности слоя, как для mp4.
+    /// Motion уже в локальном кэше (AV — `EffectPreviewVideoDiskCache`, WebP/GIF — `ImageDownloader`): скрываем постер до готовности слоя, как до замены WebP-проигрывателя.
     private var suppressesPosterBecauseMotionIsCached: Bool {
         prefersMotionWhenCached
             && !showsPosterBeforeMotion
@@ -342,6 +351,7 @@ struct PreviewMediaView<Placeholder: View>: View {
 
     private func resetMotionReadinessIfNeeded() {
         // Считаем «готовность motion» только как факт реального onPlaybackReady; иначе при быстрых сменах shouldPlay возможна вспышка постера между loader и видео.
+        motionReadinessGeneration += 1
         isMotionPlaybackReady = false
     }
 
@@ -352,9 +362,34 @@ struct PreviewMediaView<Placeholder: View>: View {
             return
         }
         if MediaVideoPlayer.isRasterMotionAssetURLString(motionURL) {
-            isMotionCachedOnDisk = ImageDownloader.shared.hasRemoteImagePayloadCached(for: motionURL)
+            isMotionCachedOnDisk = isRasterMotionCachedForPlayback(motionURL)
         } else {
             isMotionCachedOnDisk = EffectPreviewVideoDiskCache.hasCachedVideo(for: motionURL)
         }
+    }
+
+    /// Для WebP/GIF `motion cache hit` должен соответствовать кэшу реального проигрывателя SDWebImage, а не старому `ImageDownloader`.
+    private func isRasterMotionCachedForPlayback(_ urlString: String) -> Bool {
+        #if canImport(SDWebImage)
+        guard let url = URL(string: urlString) else {
+            return false
+        }
+
+        // WebP/GIF может быть закэширован по PixVerse fallback-URL, если исходный R2 недоступен.
+        // Для UI это всё равно cache hit исходного motion: показываем тот же flow, что и при обычном SDWebImage hit.
+        let candidates = [url] + (PreviewMediaURLFallback.fallbackURL(from: url).map { [$0] } ?? [])
+        for candidate in candidates {
+            guard let cacheKey = SDWebImageManager.shared.cacheKey(for: candidate) else { continue }
+            if SDImageCache.shared.imageFromMemoryCache(forKey: cacheKey) != nil {
+                return true
+            }
+            if SDImageCache.shared.diskImageDataExists(withKey: cacheKey) {
+                return true
+            }
+        }
+        return false
+        #else
+        return ImageDownloader.shared.hasRemoteImagePayloadCached(for: urlString)
+        #endif
     }
 }

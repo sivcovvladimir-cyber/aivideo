@@ -108,6 +108,11 @@ final class ConfigurationManager {
         isKeyConfigured(for: .adaptyPublicKey)
     }
 
+    /// AppsFlyer только при dev key и App Store ID; иначе не вызываем `start` / `logEvent` / deep link hooks (SDK без ключей шумит в логах).
+    var isAppsFlyerConfigured: Bool {
+        isKeyConfigured(for: .appsFlyerDevKey) && isKeyConfigured(for: .appStoreID)
+    }
+
     /// Нормализованные креды Telegram поддержки для единого канала отправки.
     var telegramSupportCredentials: (botToken: String, chatId: String)? {
         guard isTelegramSupportConfigured,

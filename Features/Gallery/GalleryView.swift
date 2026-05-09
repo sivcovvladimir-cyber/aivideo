@@ -638,35 +638,56 @@ struct GalleryView: View {
     /// Еле заметные квадраты 1:1 с тем же cardWidth, что и у MasonryGrid; фон на всю высоту области под шапкой.
     private var emptyGalleryBackgroundSkeleton: some View {
         GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
             let spacing: CGFloat = 12
             let columns = 2
-            let cardWidth = max(50, (geo.size.width - CGFloat(columns + 1) * spacing) / CGFloat(columns))
+            let cardWidth = max(50, (w - CGFloat(columns + 1) * spacing) / CGFloat(columns))
             let rowStride = cardWidth + spacing
             let rowCount = max(
                 8,
-                Int(ceil((geo.size.height + spacing) / rowStride)) + 2
+                Int(ceil((h + spacing) / rowStride)) + 2
             )
 
-            HStack(alignment: .top, spacing: spacing) {
-                ForEach(0..<columns, id: \.self) { _ in
-                    VStack(spacing: spacing) {
-                        ForEach(0..<rowCount, id: \.self) { _ in
-                            emptyMockSquareTile(side: cardWidth)
+            ZStack(alignment: .top) {
+                HStack(alignment: .top, spacing: spacing) {
+                    ForEach(0..<columns, id: \.self) { _ in
+                        VStack(spacing: spacing) {
+                            ForEach(0..<rowCount, id: \.self) { _ in
+                                emptyMockSquareTile(side: cardWidth)
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, spacing)
+
+                // Маска на вложенном HStack часто не совпадает с высотой `GeometryReader` и не гасит «хвост» плиток.
+                // Скрам тем же цветом, что и фон экрана: к низу плавно перекрываем плитки; на 75% высоты (25% от низа) уже непрозрачный фон.
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .clear, location: 0.52),
+                        .init(color: AppTheme.Colors.background.opacity(0.55), location: 0.64),
+                        .init(color: AppTheme.Colors.background, location: 0.75),
+                        .init(color: AppTheme.Colors.background, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(width: w, height: h)
+                .allowsHitTesting(false)
             }
-            .padding(.horizontal, spacing)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(width: w, height: h, alignment: .top)
+            .clipped()
         }
         .allowsHitTesting(false)
     }
 
-    /// Подложка плиток пустой галереи: без обводки и иконок; чуть контрастнее `background`, чтобы сетка читалась, но без «карточного» уровня.
+    /// Подложка плиток пустой галереи: без обводки и иконок; низкий контраст к `background`, сетка едва читается.
     private var emptyMockTileFill: Color {
         switch AppTheme.current {
         case .dark:
-            return Color(red: 0.108, green: 0.118, blue: 0.148)
+            return Color.white.opacity(0.055)
         case .light:
             return Color.black.opacity(0.048)
         }
