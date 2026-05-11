@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import SwiftUI
 import UIKit
 import CommonCrypto
@@ -135,6 +136,53 @@ extension UIImage {
         return UIGraphicsGetImageFromCurrentImageContext()
     }
 
+    /// Растр в ориентации `.up` — иначе `jpegData` и даунскейл иногда ведут себя непредсказуемо для HEIC с EXIF.
+    func normalizedUprightPixelBuffer() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// HEIC/HEIF, WebP, TIFF и т.д.: сначала `UIImage(data:)`, иначе Image I/O (как сырой `Data` из `PhotosPicker`).
+    static func decodedForAPIUpload(from data: Data) -> UIImage? {
+        if let image = UIImage(data: data) {
+            return image.normalizedUprightPixelBuffer()
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        return UIImage(cgImage: cgImage).normalizedUprightPixelBuffer()
+    }
+
+    /// PixVerse/useapi в теле `POST …/files` принимают только JPEG/PNG — всегда отдаём один из них (без HEIF в байтах).
+    func pixelDataForPixVerseUpload(jpegQuality: CGFloat = 0.9) -> (data: Data, contentType: String)? {
+        let upright = normalizedUprightPixelBuffer()
+        let q = min(1, max(0.05, jpegQuality))
+        if let data = upright.jpegData(compressionQuality: q) {
+            return (data, "image/jpeg")
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = upright.scale
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: upright.size, format: format)
+        let flattened = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: upright.size))
+            upright.draw(in: CGRect(origin: .zero, size: upright.size))
+        }
+        if let data = flattened.jpegData(compressionQuality: q) {
+            return (data, "image/jpeg")
+        }
+        if let data = flattened.pngData() {
+            return (data, "image/png")
+        }
+        return nil
+    }
+
     /// Длинная сторона не больше `maxLongSide` — PixVerse и сохранение черновика без лишнего веса.
     func downscaled(maxLongSide: CGFloat) -> UIImage {
         let longestSide = max(size.width, size.height)
@@ -146,6 +194,29 @@ extension UIImage {
         return renderer.image { _ in
             draw(in: CGRect(origin: .zero, size: targetSize))
         }
+    }
+}
+
+extension Data {
+    /// Магические байты JPEG или PNG — иное (HEIF/WebP/GIF/TIFF…) перед upload перегоняем в JPEG.
+    var isLikelyJPEGOrPNGImagePayload: Bool {
+        guard count >= 3 else { return false }
+        return withUnsafeBytes { raw -> Bool in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return false }
+            if base[0] == 0xFF, base[1] == 0xD8, base[2] == 0xFF { return true }
+            guard count >= 8 else { return false }
+            return base[0] == 0x89 && base[1] == 0x50 && base[2] == 0x4E && base[3] == 0x47
+                && base[4] == 0x0D && base[5] == 0x0A && base[6] == 0x1A && base[7] == 0x0A
+        }
+    }
+
+    /// Корректный `Content-Type` только если payload уже JPEG/PNG (см. `isLikelyJPEGOrPNGImagePayload`).
+    var pixVerseUploadMIMETypeIfJPEGOrPNG: String? {
+        guard isLikelyJPEGOrPNGImagePayload else { return nil }
+        if count >= 4, self[0] == 0x89, self[1] == 0x50, self[2] == 0x4E, self[3] == 0x47 {
+            return "image/png"
+        }
+        return "image/jpeg"
     }
 }
 

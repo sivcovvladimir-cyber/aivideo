@@ -72,16 +72,16 @@
 		FA89A8C12E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C02E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift */; };
 		FA89A8C32E37A38000F5A9F6 /* ContactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C22E37A38000F5A9F6 /* ContactService.swift */; };
 		FA8A8F6D2E439E720091D637 /* YandexMobileMetrica in Frameworks */ = {isa = PBXBuildFile; productRef = FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */; };
-		FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */ = {isa = PBXBuildFile; productRef = FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */; };
-		FA9D01082F70000100D00008 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01022F70000100D00002 /* SDWebImageSwiftUI */; };
-		FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01032F70000100D00003 /* SDWebImageWebPCoder */; };
-		FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01042F70000100D00004 /* SDWebImage */; };
 		FA8A8F712E43A83E0091D637 /* AppAnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8A8F702E43A83E0091D637 /* AppAnalyticsService.swift */; };
 		FA9501922E2EA993001E9F2E /* PaywallConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501912E2EA993001E9F2E /* PaywallConfig.swift */; };
 		FA9501952E2EB536001E9F2E /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501942E2EB536001E9F2E /* AppTheme.swift */; };
 		FA9501992E2ED966001E9F2E /* LoadingPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501982E2ED966001E9F2E /* LoadingPlaceholder.swift */; };
 		FA95019B2E2EDEC0001E9F2E /* RateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA95019A2E2EDEC0001E9F2E /* RateService.swift */; };
+		FA9D01082F70000100D00008 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01022F70000100D00002 /* SDWebImageSwiftUI */; };
+		FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01032F70000100D00003 /* SDWebImageWebPCoder */; };
+		FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01042F70000100D00004 /* SDWebImage */; };
 		FAC32DEE2E3E05CC00D84786 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC32DED2E3E05CC00D84786 /* KeychainService.swift */; };
+		FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */ = {isa = PBXBuildFile; productRef = FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */; };
 		FAD424092F5EF0C600EFC0D7 /* AdServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAD424082F5EF0C600EFC0D7 /* AdServices.framework */; };
 		FAD653332E0C8CE50030B880 /* Adapty in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653322E0C8CE50030B880 /* Adapty */; };
 		FAD653352E0C8CE50030B880 /* AdaptyPlugin in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653342E0C8CE50030B880 /* AdaptyPlugin */; };
@@ -1028,7 +1028,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1057,7 +1057,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1080,7 +1080,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1109,7 +1109,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1279,22 +1279,6 @@
 				minimumVersion = 4.5.2;
 			};
 		};
-		FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 11.15.0;
-			};
-		};
-		FAF17B1E2E0AF93C00A34D7E /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/adaptyteam/AdaptySDK-iOS";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.8.1;
-			};
-		};
 		FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SDWebImage/SDWebImageSwiftUI";
@@ -1319,6 +1303,22 @@
 				minimumVersion = 5.21.1;
 			};
 		};
+		FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.15.0;
+			};
+		};
+		FAF17B1E2E0AF93C00A34D7E /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/adaptyteam/AdaptySDK-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.8.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1326,11 +1326,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
 			productName = YandexMobileMetrica;
-		};
-		FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
-			productName = YandexMobileMetricaCrashes;
 		};
 		FA9D01022F70000100D00002 /* SDWebImageSwiftUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1346,6 +1341,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */;
 			productName = SDWebImage;
+		};
+		FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
+			productName = YandexMobileMetricaCrashes;
 		};
 		FAD653322E0C8CE50030B880 /* Adapty */ = {
 			isa = XCSwiftPackageProductDependency;

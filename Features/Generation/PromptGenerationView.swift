@@ -38,7 +38,7 @@ struct PromptGenerationView: View {
 
     @State private var photoAspect: PhotoAspectRatio = .nineSixteen
     @State private var videoAspect: PhotoAspectRatio = .nineSixteen
-    /// До двух референсов: оба JPEG после persist уходят в `GenerationJobRequest` (фото: `image_path_1`+`2`, видео: `first_frame_path`+`last_frame_path`).
+    /// До двух референсов: после persist — только JPEG/PNG для PixVerse (`GenerationJobRequest`: фото `image_path_*`, видео `first_frame_path` / `last_frame_path`).
     @State private var referenceImageSlot0: UIImage?
     @State private var referenceImageSlot1: UIImage?
     @State private var pickerItemSlot0: PhotosPickerItem?
@@ -50,6 +50,7 @@ struct PromptGenerationView: View {
     }
     private let panelCornerRadius: CGFloat = 28
     private let promptCardCornerRadius: CGFloat = 24
+    /// Сторона квадратной плитки превью референса; картинка только маскируется в UI (`scaledToFill` + clip), пиксели не кропаются.
     private let photoTileHeight: CGFloat = 160
     /// Единая высота сегмента Video/Photo и пилл настроек — как в референсе Figma.
     private let generationControlPillHeight: CGFloat = 44
@@ -530,8 +531,7 @@ struct PromptGenerationView: View {
                     .font(AppTheme.Typography.body.weight(.medium))
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
-            .frame(maxWidth: .infinity)
-            .frame(height: photoTileHeight)
+            .frame(width: photoTileHeight, height: photoTileHeight)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(AppTheme.Colors.background.opacity(0.52))
@@ -542,15 +542,13 @@ struct PromptGenerationView: View {
     }
 
     private func referenceImagePreview(image: UIImage, slot: Int) -> some View {
-        ZStack(alignment: .topLeading) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: photoTileHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            HStack {
+        // Оверлей не должен жить в `HStack` со `Spacer`: внешний `HStack` даёт колонке maxWidth — иконка «обновить» уезжала за пределы 160×160.
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(width: photoTileHeight, height: photoTileHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .topLeading) {
                 Button {
                     clearReferenceSlot(slot)
                 } label: {
@@ -561,31 +559,32 @@ struct PromptGenerationView: View {
                         .background(Color.black.opacity(0.55), in: Circle())
                 }
                 .appPlainButtonStyle()
-
-                Spacer(minLength: 0)
-
-                if slot == 0 {
-                    PhotosPicker(selection: $pickerItemSlot0, matching: .images) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(AppTheme.Colors.onPrimaryText)
-                            .frame(width: 24, height: 24)
-                            .background(Color.black.opacity(0.55), in: Circle())
-                    }
-                    .disabled(isLoadingPhoto)
-                } else {
-                    PhotosPicker(selection: $pickerItemSlot1, matching: .images) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(AppTheme.Colors.onPrimaryText)
-                            .frame(width: 24, height: 24)
-                            .background(Color.black.opacity(0.55), in: Circle())
-                    }
-                    .disabled(isLoadingPhoto)
-                }
+                .padding(8)
             }
-            .padding(8)
-        }
+            .overlay(alignment: .topTrailing) {
+                Group {
+                    if slot == 0 {
+                        PhotosPicker(selection: $pickerItemSlot0, matching: .images) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(AppTheme.Colors.onPrimaryText)
+                                .frame(width: 24, height: 24)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                        }
+                        .disabled(isLoadingPhoto)
+                    } else {
+                        PhotosPicker(selection: $pickerItemSlot1, matching: .images) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(AppTheme.Colors.onPrimaryText)
+                                .frame(width: 24, height: 24)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                        }
+                        .disabled(isLoadingPhoto)
+                    }
+                }
+                .padding(8)
+            }
     }
 
     private func clearReferenceSlot(_ slot: Int) {
@@ -732,7 +731,7 @@ struct PromptGenerationView: View {
 
         do {
             if let data = try await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
+               let image = UIImage.decodedForAPIUpload(from: data) {
                 if slot == 0 {
                     referenceImageSlot0 = image
                 } else {

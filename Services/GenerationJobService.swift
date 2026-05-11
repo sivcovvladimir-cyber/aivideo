@@ -146,7 +146,7 @@ final class GenerationJobService: ObservableObject {
 
     func persistInputImage(_ image: UIImage) throws -> String {
         let prepared = image.downscaledForPixVerse(maxDimension: 2048)
-        guard let data = prepared.jpegData(compressionQuality: 0.9) else {
+        guard let payload = prepared.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
             throw NetworkError.invalidData
         }
 
@@ -155,8 +155,9 @@ final class GenerationJobService: ObservableObject {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
 
-        let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
-        try data.write(to: url)
+        let ext = payload.contentType == "image/png" ? "png" : "jpg"
+        let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        try payload.data.write(to: url)
         return url.path
     }
 
@@ -352,9 +353,21 @@ final class GenerationJobService: ObservableObject {
 
     private func uploadRequiredInputImage(_ path: String) async throws -> PixVerseUploadResult {
         guard FileManager.default.fileExists(atPath: path) else { throw NetworkError.invalidData }
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        var data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let contentType: String
+        if let mime = data.pixVerseUploadMIMETypeIfJPEGOrPNG {
+            contentType = mime
+        } else {
+            guard let ui = UIImage.decodedForAPIUpload(from: data) else { throw NetworkError.invalidData }
+            let prepared = ui.downscaled(maxLongSide: 2048)
+            guard let payload = prepared.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
+                throw NetworkError.invalidData
+            }
+            data = payload.data
+            contentType = payload.contentType
+        }
         phase = .uploading
-        return try await api.uploadImage(data)
+        return try await api.uploadImage(data, contentType: contentType)
     }
 
     private func downloadAndSave(result: PixVerseCompletedResult, prompt: String?) async throws -> GeneratedMedia {

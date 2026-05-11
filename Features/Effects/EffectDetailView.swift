@@ -326,7 +326,7 @@ struct EffectDetailView: View {
 
         do {
             if let data = try await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
+               let image = UIImage.decodedForAPIUpload(from: data) {
                 appState.setEffectDetailDraftPhoto(image)
             }
         } catch {
