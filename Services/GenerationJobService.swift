@@ -145,8 +145,7 @@ final class GenerationJobService: ObservableObject {
     }
 
     func persistInputImage(_ image: UIImage) throws -> String {
-        let prepared = image.downscaledForPixVerse(maxDimension: 2048)
-        guard let payload = prepared.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
+        guard let payload = image.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
             throw NetworkError.invalidData
         }
 
@@ -353,19 +352,14 @@ final class GenerationJobService: ObservableObject {
 
     private func uploadRequiredInputImage(_ path: String) async throws -> PixVerseUploadResult {
         guard FileManager.default.fileExists(atPath: path) else { throw NetworkError.invalidData }
-        var data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let contentType: String
-        if let mime = data.pixVerseUploadMIMETypeIfJPEGOrPNG {
-            contentType = mime
-        } else {
-            guard let ui = UIImage.decodedForAPIUpload(from: data) else { throw NetworkError.invalidData }
-            let prepared = ui.downscaled(maxLongSide: 2048)
-            guard let payload = prepared.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
-                throw NetworkError.invalidData
-            }
-            data = payload.data
-            contentType = payload.contentType
+        let raw = try Data(contentsOf: URL(fileURLWithPath: path))
+        // Любой вход (HEIC, крупный JPEG/PNG с диска) — один пайплайн: декод → ужимание под лимит upload → JPEG/PNG под API.
+        guard let ui = UIImage.decodedForAPIUpload(from: raw) else { throw NetworkError.invalidData }
+        guard let payload = ui.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
+            throw NetworkError.invalidData
         }
+        let data = payload.data
+        let contentType = payload.contentType
         phase = .uploading
         return try await api.uploadImage(data, contentType: contentType)
     }
@@ -527,8 +521,3 @@ private extension GenerationJobRequest {
     }
 }
 
-private extension UIImage {
-    func downscaledForPixVerse(maxDimension: CGFloat) -> UIImage {
-        downscaled(maxLongSide: maxDimension)
-    }
-}

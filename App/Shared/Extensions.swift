@@ -159,8 +159,9 @@ extension UIImage {
     }
 
     /// PixVerse/useapi в теле `POST …/files` принимают только JPEG/PNG — всегда отдаём один из них (без HEIF в байтах).
-    func pixelDataForPixVerseUpload(jpegQuality: CGFloat = 0.9) -> (data: Data, contentType: String)? {
-        let upright = normalizedUprightPixelBuffer()
+    /// Перед кодированием ужимаем по длинной стороне: меньше вес multipart и стабильнее относительно лимитов API на больших референсах.
+    func pixelDataForPixVerseUpload(jpegQuality: CGFloat = 0.9, maxUploadLongSide: CGFloat = 1080) -> (data: Data, contentType: String)? {
+        let upright = normalizedUprightPixelBuffer().downscaled(maxLongSide: maxUploadLongSide)
         let q = min(1, max(0.05, jpegQuality))
         if let data = upright.jpegData(compressionQuality: q) {
             return (data, "image/jpeg")
@@ -190,7 +191,12 @@ extension UIImage {
 
         let scale = maxLongSide / longestSide
         let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        // Важно фиксировать scale=1: иначе renderer может взять scale экрана (2x/3x),
+        // и фактические пиксели станут больше лимита API при том же targetSize в points.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         return renderer.image { _ in
             draw(in: CGRect(origin: .zero, size: targetSize))
         }
