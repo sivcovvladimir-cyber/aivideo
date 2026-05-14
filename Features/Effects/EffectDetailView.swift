@@ -201,7 +201,8 @@ struct EffectDetailView: View {
                     showsPosterBeforeMotion: false,
                     motionPlaybackVolumeOverride: isDetailScreenInteractable ? 0.07 : 0.0,
                     debugLogTag: nil,
-                    debugContext: "detail id=\(preset.id) slug=\(preset.slug) title='\(preset.title)'"
+                    debugContext: "detail id=\(preset.id) slug=\(preset.slug) title='\(preset.title)'",
+                    posterNetworkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds
                 ) {
                     if preset.previewImageURL != nil {
                         ProgressView()

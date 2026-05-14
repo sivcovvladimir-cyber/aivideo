@@ -260,7 +260,10 @@ struct ProductInfo: Codable {
     let localizedDescription: String
     let localizedPrice: String
     let currencyCode: String?
+    /// Единица периода (`month`, `year`, …) для UI; из StoreKit/Adapty.
     let subscriptionPeriod: String?
+    /// Число единиц периода (например 3 при `month`); nil в старых снимках кэша.
+    let subscriptionPeriodUnitCount: Int?
     let trialPeriod: String?
     let isTrial: Bool
 }
@@ -305,9 +308,8 @@ class PaywallCacheManager: ObservableObject {
     private let lastUpdateKey = "last_cache_update"
     
     private init() {
-        // Базовый product/adapty-контракт всегда берём из bundled JSON: старый UserDefaults-кэш не должен
-        // подменять свежие placement/product IDs до фонового merge с Adapty.
-        paywallConfig = loadProjectConfig()
+        // Как в storecards: до сети показываем последний merged `logic` из UD, а контракт продуктов/placement — из свежего бандла (не затираем placementId старым кэшем).
+        paywallConfig = Self.rebasedPaywallConfigFromDiskCache(bundle: loadProjectConfig())
 
         if let cachedProducts = loadProductsFromCache() {
             productsCache = cachedProducts
@@ -366,10 +368,9 @@ class PaywallCacheManager: ObservableObject {
         print("🔄 [PaywallCacheManager] Начинаем загрузку данных paywall...")
         print("[paywall] loadAndCachePaywallDataAsync: старт tier=\(currentPlacementTier.rawValue) productsCache.count=\(productsCache.count) forceRefresh=\(forceRefresh) updatesLoadingIndicator=\(updatesLoadingIndicator)")
 
-        // Параллелим конфиг и продукты: AdaptyService дедуплицирует общий paywall-запрос, поэтому не получаем двойной сетевой hit.
-        async let c = loadPaywallConfigAsync(forceRefresh: forceRefresh)
-        async let p = loadProductsAsync(forceRefresh: forceRefresh)
-        let (configLoaded, productsLoaded) = await (c, p)
+        // Сначала remote merge, потом продукты: один согласованный getPaywall (как в storecards), меньше гонок между config и products.
+        let configLoaded = await loadPaywallConfigAsync(forceRefresh: forceRefresh)
+        let productsLoaded = await loadProductsAsync(forceRefresh: forceRefresh)
 
         if updatesLoadingIndicator {
             await MainActor.run { self.isLoading = false }
@@ -401,6 +402,40 @@ class PaywallCacheManager: ObservableObject {
         }
     }
 
+    /// Строковый ключ единицы периода для кэша и PaywallView (не `rawValue` enum unit — у Adapty это не String).
+    private static func adaptySubscriptionPeriodUnitKey(_ unit: AdaptySubscriptionPeriod.Unit) -> String {
+        switch unit {
+        case .day: return "day"
+        case .week: return "week"
+        case .month: return "month"
+        case .year: return "year"
+        case .unknown: return "unknown"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    /// Восстанавливаем последний merged `logic` из UserDefaults поверх актуального бандла (planIds / adapty — только из bundle).
+    private static func rebasedPaywallConfigFromDiskCache(bundle: PaywallConfig) -> PaywallConfig {
+        let ud = UserDefaults.standard
+        let key = "cached_paywall_config"
+        guard let data = ud.data(forKey: key),
+              let cached = try? JSONDecoder().decode(PaywallConfig.self, from: data)
+        else {
+            print("[paywall] rebasedPaywallConfigFromDiskCache: нет \"cached_paywall_config\" — только bundle")
+            return bundle
+        }
+        let logic = PaywallConfig.LogicConfig.mergedRemote(cached.logic, over: bundle.logic)
+        print("[paywall] rebasedPaywallConfigFromDiskCache: logic из UD rebased на bundle placement/planIds")
+        return PaywallConfig(
+            planIds: bundle.planIds,
+            purchasePlanIds: bundle.purchasePlanIds,
+            trialsPlanIds: bundle.trialsPlanIds,
+            adapty: bundle.adapty,
+            logic: logic
+        )
+    }
+
     /// Загрузить конфигурацию paywall из Adapty (чистая async-функция)
     private func loadPaywallConfigAsync(forceRefresh: Bool = false) async -> Bool {
         await MainActor.run {
@@ -414,9 +449,8 @@ class PaywallCacheManager: ObservableObject {
         let pl = (try? configuredAdaptyPlacementId()) ?? "(ошибка placement)"
         print("[paywall] loadPaywallConfigAsync: bundled placementId=\(pl) planIds=\(String(describing: baseConfig.planIds)) purchasePlanIds=\(String(describing: baseConfig.purchasePlanIds))")
 
-        do {
-            let adaptyConfig = try await AdaptyService.shared.fetchPaywallConfigAsync(forceRefresh: forceRefresh)
-            let mergedConfig = mergeConfigs(base: baseConfig, adapty: adaptyConfig)
+        if let adaptyOverlay = await AdaptyService.shared.fetchPaywallConfigOverlayAsync(forceRefresh: forceRefresh) {
+            let mergedConfig = mergeConfigs(base: baseConfig, adapty: adaptyOverlay)
             await MainActor.run {
                 self.paywallConfig = mergedConfig
                 self.saveConfigToCache(mergedConfig)
@@ -427,17 +461,17 @@ class PaywallCacheManager: ObservableObject {
                 print("[paywall] loadPaywallConfigAsync: merge OK placementId=\(mp) planIds=\(String(describing: mergedConfig.planIds)) purchasePlanIds=\(String(describing: mergedConfig.purchasePlanIds))")
             }
             return true
-        } catch {
-            await MainActor.run {
-                print("⚠️ [PaywallCacheManager] Adapty недоступен, используем базовую конфигурацию: \(error)")
-                print("[paywall] loadPaywallConfigAsync: ошибка Adapty, fallback на bundled: \(error)")
-                self.paywallConfig = baseConfig
-                self.saveConfigToCache(baseConfig)
-                self.isRemotePaywallConfigLoadFinished = true
-                self.isRemotePaywallConfigLoadSucceeded = false
-            }
-            return true
         }
+
+        await MainActor.run {
+            print("⚠️ [PaywallCacheManager] Remote overlay не получен — не перезаписываем cached_paywall_config; in-memory оставляем текущий конфиг")
+            if self.paywallConfig == nil {
+                self.paywallConfig = Self.rebasedPaywallConfigFromDiskCache(bundle: baseConfig)
+            }
+            self.isRemotePaywallConfigLoadFinished = true
+            self.isRemotePaywallConfigLoadSucceeded = false
+        }
+        return true
     }
     
     /// Загрузить информацию о продуктах из Adapty, с локальным StoreKit fallback для разработки.
@@ -456,13 +490,15 @@ class PaywallCacheManager: ObservableObject {
             var cache: [String: AdaptyPaywallProduct] = [:]
 
             for product in products {
+                let skPeriod = product.subscriptionPeriod
                 productsInfo[product.vendorProductId] = ProductInfo(
                     vendorProductId: product.vendorProductId,
                     localizedTitle: product.localizedTitle,
                     localizedDescription: product.localizedDescription,
                     localizedPrice: product.localizedPrice ?? "",
                     currencyCode: product.currencyCode,
-                    subscriptionPeriod: product.subscriptionPeriod?.unit.rawValue as? String,
+                    subscriptionPeriod: skPeriod.map { Self.adaptySubscriptionPeriodUnitKey($0.unit) },
+                    subscriptionPeriodUnitCount: skPeriod?.numberOfUnits,
                     trialPeriod: isTrialProduct(product) ? "3 days" : nil,
                     isTrial: isTrialProduct(product)
                 )
@@ -537,6 +573,7 @@ class PaywallCacheManager: ObservableObject {
                     localizedPrice: product.displayPrice,
                     currencyCode: product.priceFormatStyle.currencyCode,
                     subscriptionPeriod: subscriptionPeriodString(for: product),
+                    subscriptionPeriodUnitCount: subscriptionPeriodUnitCount(for: product),
                     trialPeriod: product.subscription?.introductoryOffer == nil ? nil : "3 days",
                     isTrial: product.subscription?.introductoryOffer != nil
                 )
@@ -635,6 +672,14 @@ class PaywallCacheManager: ObservableObject {
             }
         }
 
+        /// P1W / P3M / P1Y из локального `.storekit` → число единиц периода для `ProductInfo`.
+        private static func unitCount(fromISO8601Duration s: String?) -> Int? {
+            guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), s.hasPrefix("P"), s.count >= 3 else { return nil }
+            let rest = s.dropFirst()
+            let digits = rest.prefix(while: { $0.isNumber })
+            return Int(digits).flatMap { $0 >= 1 ? $0 : nil }
+        }
+
         func productInfo(subscriptionPeriod: String?) -> ProductInfo {
             let localization = localizations?.first { $0.locale == Locale.current.identifier }
                 ?? localizations?.first { $0.locale == "en_US" }
@@ -647,6 +692,7 @@ class PaywallCacheManager: ObservableObject {
                 localizedPrice: "$\(displayPrice)",
                 currencyCode: "USD",
                 subscriptionPeriod: subscriptionPeriod,
+                subscriptionPeriodUnitCount: Self.unitCount(fromISO8601Duration: recurringSubscriptionPeriod),
                 trialPeriod: nil,
                 isTrial: false
             )
@@ -680,6 +726,12 @@ class PaywallCacheManager: ObservableObject {
         case .year: return "year"
         @unknown default: return nil
         }
+    }
+
+    private func subscriptionPeriodUnitCount(for product: StoreKit.Product) -> Int? {
+        guard let period = product.subscription?.subscriptionPeriod else { return nil }
+        let n = period.value
+        return n >= 1 ? n : nil
     }
     
     // MARK: - Project Configuration

@@ -394,6 +394,7 @@ struct EffectsHomeView: View {
                     // showsPosterBeforeMotion: false,
                     debugLogTag: nil,
                     debugContext: "home-hero id=\(item.preset.id) slug=\(item.preset.slug) title='\(item.preset.title)' index=\(index)",
+                    posterNetworkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds,
                     onMotionPlaybackReady: (playHeroMotion && item.preset.previewVideoURL != nil)
                         ? { heroActiveMotionPlaybackReady = true }
                         : nil

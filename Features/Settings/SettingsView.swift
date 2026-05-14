@@ -485,8 +485,7 @@ struct SettingsView: View {
             }
             .overlay(alignment: .bottom) {
                 ZStack(alignment: .bottom) {
-                    BottomNavigationBar()
-                    // Поверх капсулы, `allowsHitTesting(false)` — тапы проходят в таббар. Малый bounce внизу не раскрывает версию (dead zone).
+                    // Сначала версия (ниже по z-order), затем таббар — при bounce строка не перекрывает капсулу, остаётся визуально под ней.
                     let revealRubber = max(0, settingsScrollBottomRubberband - SettingsVersionRevealLayout.revealStartRubberThreshold)
                     Text("v \(bundleShortVersion)")
                         .font(.footnote)
@@ -498,6 +497,7 @@ struct SettingsView: View {
                         .offset(y: SettingsVersionRevealLayout.versionRestDownwardOffset - revealRubber)
                         .opacity(min(1, revealRubber / SettingsVersionRevealLayout.opacityRubberDivisor))
                         .allowsHitTesting(false)
+                    BottomNavigationBar()
                 }
             }
         }

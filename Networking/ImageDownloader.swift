@@ -37,7 +37,8 @@ enum PreviewMediaURLFallback {
 /// Протокол для скачивания и кэширования изображений
 public protocol ImageDownloaderProtocol {
     /// Скачивает изображение по URL и сохраняет локально (`effectPreviewLogTag` — опциональные логи превью эффектов).
-    func downloadImage(from url: String, effectPreviewLogTag: String?, completion: @escaping (Result<String, NetworkError>) -> Void)
+    /// `networkRequestTimeout`: если задан, такой `timeoutInterval` только на **первую** сетевую попытку (канонический URL); fallback идёт с дефолтным таймаутом URLSession. `nil` — дефолт на всех шагах.
+    func downloadImage(from url: String, effectPreviewLogTag: String?, networkRequestTimeout: TimeInterval?, completion: @escaping (Result<String, NetworkError>) -> Void)
     /// Сетка Last Results: ужатый превью (меньше трафика и памяти, чем полный оригинал).
     func loadLastResultsThumbnail(from urlString: String, completion: @escaping (UIImage?) -> Void)
     /// Проверяет, есть ли уже закэшированный превью-файл Last Results (RAM/диск) для URL.
@@ -60,6 +61,9 @@ public protocol ImageDownloaderProtocol {
 public class ImageDownloader: ImageDownloaderProtocol {
     // MARK: - Singleton
     public static let shared = ImageDownloader()
+
+    /// Значение для `downloadImage(..., networkRequestTimeout:)` с постеров превью эффектов: лимит ожидания только на первый URL (R2); зеркало без укороченного таймаута.
+    public static let effectPreviewPosterNetworkRequestTimeoutSeconds: TimeInterval = 10
     
     // Статистика
     private var successfulDownloads = 0
@@ -140,7 +144,7 @@ public class ImageDownloader: ImageDownloaderProtocol {
         }
 
         // Одно скачивание по сети — через downloadImage; затем миниатюра с тех же байт на диске.
-        downloadImage(from: urlString, effectPreviewLogTag: nil) { [weak self] result in
+        downloadImage(from: urlString, effectPreviewLogTag: nil, networkRequestTimeout: nil) { [weak self] result in
             guard let self else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -232,7 +236,7 @@ public class ImageDownloader: ImageDownloaderProtocol {
     }
 
     // MARK: - Public Methods
-    public func downloadImage(from url: String, effectPreviewLogTag: String? = nil, completion: @escaping (Result<String, NetworkError>) -> Void) {
+    public func downloadImage(from url: String, effectPreviewLogTag: String? = nil, networkRequestTimeout: TimeInterval? = nil, completion: @escaping (Result<String, NetworkError>) -> Void) {
         func elog(_ message: String) {
             if let tag = effectPreviewLogTag {
                 // print("\(tag) ImageDownloader \(message)")
@@ -314,23 +318,30 @@ public class ImageDownloader: ImageDownloaderProtocol {
                 return
             }
             let candidate = candidateURLs[index]
-            downloadAndCache(url: candidate, effectPreviewLogTag: effectPreviewLogTag) { result in
-                switch result {
-                case .success(let path):
-                    if candidate != url, let image = UIImage(contentsOfFile: path) {
-                        warmOriginalKeys(with: image)
-                        persistOriginalAliasIfNeeded(from: path)
-                        Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
-                    }
-                    completion(.success(path))
-                case .failure(let error):
-                    if index + 1 < candidateURLs.count {
-                        attemptDownload(at: index + 1)
-                    } else {
-                        completion(.failure(error))
+            // Явный таймаут только на первую попытку (основной CDN); fallback оставляем на дефолте URLSession — иначе медленное зеркало обрезается тем же лимитом.
+            let requestTimeout = index == 0 ? networkRequestTimeout : nil
+            downloadAndCache(
+                url: candidate,
+                effectPreviewLogTag: effectPreviewLogTag,
+                requestTimeout: requestTimeout,
+                completion: { result in
+                    switch result {
+                    case .success(let path):
+                        if candidate != url, let image = UIImage(contentsOfFile: path) {
+                            warmOriginalKeys(with: image)
+                            persistOriginalAliasIfNeeded(from: path)
+                            Self.postEffectPreviewVideoCacheUpdatedIfRemote(url: url)
+                        }
+                        completion(.success(path))
+                    case .failure(let error):
+                        if index + 1 < candidateURLs.count {
+                            attemptDownload(at: index + 1)
+                        } else {
+                            completion(.failure(error))
+                        }
                     }
                 }
-            }
+            )
         }
         attemptDownload(at: 0)
     }
@@ -364,7 +375,7 @@ public class ImageDownloader: ImageDownloaderProtocol {
             }
             
             // Скачиваем если нет в кэше (без блокировки); внутри `downloadImage` уже есть fallback на PixVerse.
-            self.downloadImage(from: url, effectPreviewLogTag: nil) { result in
+            self.downloadImage(from: url, effectPreviewLogTag: nil, networkRequestTimeout: nil) { result in
                 switch result {
                 case .success(let localPath):
                     // Загружаем изображение в memory cache
@@ -393,6 +404,21 @@ public class ImageDownloader: ImageDownloaderProtocol {
                let size = attrs[.size] as? NSNumber,
                size.int64Value > 0 {
                 return true
+            }
+        }
+        // Совместимость со старым ключом fallback: если payload есть только под зеркалом, считаем это cache hit исходного URL.
+        if let fallback = PreviewMediaURLFallback.fallbackURLString(from: urlString), fallback != urlString {
+            let fallbackKey = NSString(string: fallback)
+            let fallbackNormalizedKey = NSString(string: normalizedRemoteMemoryCacheKey(for: fallback))
+            if memoryCache.object(forKey: fallbackKey) != nil || memoryCache.object(forKey: fallbackNormalizedKey) != nil {
+                return true
+            }
+            for cachedPath in diskCachePaths(for: fallback) {
+                if let attrs = try? fileManager.attributesOfItem(atPath: cachedPath.path),
+                   let size = attrs[.size] as? NSNumber,
+                   size.int64Value > 0 {
+                    return true
+                }
             }
         }
         return false
@@ -425,6 +451,33 @@ public class ImageDownloader: ImageDownloaderProtocol {
                 // Добавляем в memory cache под оба ключа, чтобы смена query не ломала мгновенный показ из кэша.
                 memoryCache.setObject(image, forKey: key)
                 memoryCache.setObject(image, forKey: normalizedKey)
+                successfulCacheHits += 1
+                return image
+            }
+        }
+
+        // Совместимость со старым ключом fallback: если на диске/в RAM только зеркало, алиасим к исходному URL.
+        guard let fallback = PreviewMediaURLFallback.fallbackURLString(from: url), fallback != url else {
+            return nil
+        }
+        let fallbackKey = NSString(string: fallback)
+        let fallbackNormalizedKey = NSString(string: normalizedRemoteMemoryCacheKey(for: fallback))
+        if let fallbackImage = memoryCache.object(forKey: fallbackKey) ?? memoryCache.object(forKey: fallbackNormalizedKey) {
+            memoryCache.setObject(fallbackImage, forKey: key)
+            memoryCache.setObject(fallbackImage, forKey: normalizedKey)
+            successfulCacheHits += 1
+            return fallbackImage
+        }
+        for fallbackPath in diskCachePaths(for: fallback) {
+            if fileManager.fileExists(atPath: fallbackPath.path),
+               let image = UIImage(contentsOfFile: fallbackPath.path) {
+                memoryCache.setObject(image, forKey: key)
+                memoryCache.setObject(image, forKey: normalizedKey)
+                let sourceURL = URL(fileURLWithPath: fallbackPath.path)
+                for target in diskCachePaths(for: url) where target.path != fallbackPath.path {
+                    if fileManager.fileExists(atPath: target.path) { continue }
+                    try? fileManager.copyItem(at: sourceURL, to: target)
+                }
                 successfulCacheHits += 1
                 return image
             }
@@ -530,7 +583,12 @@ public class ImageDownloader: ImageDownloaderProtocol {
     }
     
     // MARK: - Private Methods
-    private func downloadAndCache(url: String, effectPreviewLogTag: String?, completion: @escaping (Result<String, NetworkError>) -> Void) {
+    private func downloadAndCache(
+        url: String,
+        effectPreviewLogTag: String?,
+        requestTimeout: TimeInterval?,
+        completion: @escaping (Result<String, NetworkError>) -> Void
+    ) {
         func elog(_ message: String) {
             if let tag = effectPreviewLogTag {
                 // print("\(tag) ImageDownloader \(message)")
@@ -546,8 +604,20 @@ public class ImageDownloader: ImageDownloaderProtocol {
             return
         }
 
-        elog("URLSession.dataTask START host=\(downloadURL.host ?? "?")")
-        session.dataTask(with: downloadURL) { [weak self] data, response, error in
+        // Явный таймаут — только если вызывающий передал `networkRequestTimeout` на первую попытку (см. `attemptDownload`); иначе дефолт URLRequest.
+        let request: URLRequest
+        if let timeout = requestTimeout {
+            request = URLRequest(
+                url: downloadURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: timeout
+            )
+            elog("URLSession.dataTask START host=\(downloadURL.host ?? "?") timeout=\(Int(timeout))s explicit")
+        } else {
+            request = URLRequest(url: downloadURL)
+            elog("URLSession.dataTask START host=\(downloadURL.host ?? "?") defaultTimeout")
+        }
+        session.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
             if let error = error {

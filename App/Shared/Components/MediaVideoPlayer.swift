@@ -112,6 +112,34 @@ struct MediaVideoPlayer: View {
         !isRasterMotionAssetURLString(raw)
     }
 
+    #if canImport(SDWebImage)
+    /// SDWebImage хранит WebP/GIF по ключу конкретного URL: если файл лежит только у зеркала, старт с канонического R2 снова бьёт в сеть при каждом открытии экрана.
+    static func preferredRasterMotionURLForSDWebImageCache(canonical url: URL) -> URL {
+        guard let canonicalKey = SDWebImageManager.shared.cacheKey(for: url) else {
+            return url
+        }
+        if SDImageCache.shared.imageFromMemoryCache(forKey: canonicalKey) != nil { return url }
+        if SDImageCache.shared.diskImageDataExists(withKey: canonicalKey) { return url }
+        guard let fallback = PreviewMediaURLFallback.fallbackURL(from: url),
+              fallback != url,
+              let fallbackKey = SDWebImageManager.shared.cacheKey(for: fallback) else {
+            return url
+        }
+        if SDImageCache.shared.imageFromMemoryCache(forKey: fallbackKey) != nil { return fallback }
+        if SDImageCache.shared.diskImageDataExists(withKey: fallbackKey) { return fallback }
+        return url
+    }
+
+    /// Быстрый hit для `PreviewMediaView` / политики лоадера: учитываем и канон, и зеркальный ключ кэша.
+    static func isRasterMotionCachedInSDWebImage(forCanonical urlString: String) -> Bool {
+        guard let url = URL(string: urlString) else { return false }
+        let preferred = preferredRasterMotionURLForSDWebImageCache(canonical: url)
+        guard let key = SDWebImageManager.shared.cacheKey(for: preferred) else { return false }
+        if SDImageCache.shared.imageFromMemoryCache(forKey: key) != nil { return true }
+        return SDImageCache.shared.diskImageDataExists(withKey: key)
+    }
+    #endif
+
     var body: some View {
         Group {
             if isRasterMotionPreviewURL {
@@ -420,6 +448,27 @@ private enum EffectDetailPreviewPriorityBootstrap {
     }
 }
 
+/// Первая сетевая попытка только по R2 с лимитом; зеркало — после таймаута/ошибки (постеры: 10 с в `ImageDownloader`; motion MP4/WebP-prewarm: 15 с ниже).
+private enum EffectPreviewPrimaryR2AttemptPolicy {
+    static let motionVideoDownloadTimeoutSeconds: TimeInterval = 15
+    static let rasterPrewarmFirstAttemptTimeoutSeconds: TimeInterval = 15
+}
+
+#if canImport(SDWebImage)
+private final class PrewarmRasterFirstAttemptGate: @unchecked Sendable {
+    private var taken = false
+    private let lock = NSLock()
+
+    func take() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !taken else { return false }
+        taken = true
+        return true
+    }
+}
+#endif
+
 /// Централизуем policy для Effects (home/browse/detail): где и что прогревать, и какой URL на detail получает приоритет.
 /// Это первая итерация оркестратора: физические кэши остаются прежними (`EffectPreviewVideoDiskCache`/`ImageDownloader`), а решения о приоритетах уносим из View.
 actor EffectsMediaOrchestrator {
@@ -435,6 +484,14 @@ actor EffectsMediaOrchestrator {
     private var onboardingCatalogWarmupSignature: String?
     private var catalogTailWarmupTask: Task<Void, Never>?
     private var catalogTailWarmupSignature: String?
+
+    /// Параметры фонового прогрева каталога с онбординга (скролла нет — имитируем раскрытие сверху вниз).
+    private enum OnboardingHomeCatalogWarmup {
+        /// Сколько верхних горизонталей (hero + секции) участвуют в первой волне; на каждой следующей волне в окно добавляется следующая рельса.
+        static let initialRailWindow = 3
+        /// Сколько плиток на рельсу за одну волну. `1` даёт пошаговое «диагональное» раскрытие (одна ячейка на активную рельс за цикл); `3` — крупнее батчи, меньше HTTP-шагов.
+        static let tilesPerWaveStride = 3
+    }
 
     /// До показа detail заранее помечаем приоритетный URL, чтобы соседние prewarm-задачи не успели занять очередь.
     nonisolated func prepareDetailEntryPriority(previewVideoURLString: String?) {
@@ -481,11 +538,8 @@ actor EffectsMediaOrchestrator {
         let allMotion = orderedHomeLandingMotionPreviewURLs(from: payload)
         let allPoster = orderedHomeLandingPosterURLs(from: payload)
 
-        let blockedMotion = Set(prioritizedMotion + lookaheadMotion)
-        let blockedPoster = Set(prioritizedPoster + lookaheadPoster)
-
-        let queueMotion = lookaheadMotion + allMotion.filter { !blockedMotion.contains($0) }
-        let queuePoster = lookaheadPoster + allPoster.filter { !blockedPoster.contains($0) }
+        let queueMotion = uniqueOrdered(prioritizedMotion + lookaheadMotion + allMotion)
+        let queuePoster = uniqueOrdered(prioritizedPoster + lookaheadPoster + allPoster)
 
         let signature = "home||\(queueMotion.joined(separator: "|"))||\(queuePoster.joined(separator: "|"))"
         guard signature != catalogTailWarmupSignature else { return }
@@ -528,6 +582,16 @@ actor EffectsMediaOrchestrator {
         )
     }
 
+    /// Дроп подписей и in-flight задач прогрева после Debug «Очистить кэш»: иначе при повторном входе в онбординг/мейн `signature` совпадает, `await task.value` отдаёт мгновенный hit, и реального прогрева не происходит.
+    func resetCatalogWarmupStateAfterCacheClear() {
+        onboardingCatalogWarmupTask?.cancel()
+        onboardingCatalogWarmupTask = nil
+        onboardingCatalogWarmupSignature = nil
+        catalogTailWarmupTask?.cancel()
+        catalogTailWarmupTask = nil
+        catalogTailWarmupSignature = nil
+    }
+
     /// На detail прогреваем текущий и ближайшие соседние пресеты карусели.
     func prewarmDetailIfNeeded(
         sceneIsActive: Bool,
@@ -557,46 +621,33 @@ actor EffectsMediaOrchestrator {
         await prewarmHomeHeroIfNeeded(sceneIsActive: sceneIsActive, heroVideoURLString: heroVideoURLString)
     }
 
-    /// Прогрев для онбординга: сначала hero первого экрана, затем первые видимые карточки верхних секций main-экрана.
-    /// Это уменьшает «пустой» старт после завершения онбординга, не блокируя кнопку перехода.
+    /// Прогрев для онбординга: «диагональные» волны главной (постеры → motion), без привязки к скроллу.
+    /// `EffectPreviewVideoDiskCache`: на время прогрева отключаем catalog-priority gate — иначе главная ставит приоритет на одну видимую карточку и весь MP4-prewarm онбординга ждёт её.
+    /// Хвост главной (`reevaluateCatalogTailWarmupForHome`) ждёт завершения этой задачи, чтобы не забивать тот же актор очередью «motion всего каталога».
     func prewarmHomeLandingFromOnboardingIfNeeded(
         sceneIsActive: Bool,
         payload: EffectsHomePayload
     ) async {
         guard sceneIsActive else { return }
-        let prioritizedMotion = prioritizedHomeLandingPreviewURLs(from: payload)
-        let allOrderedMotion = orderedHomeLandingMotionPreviewURLs(from: payload)
-        let prioritizedMotionSet = Set(prioritizedMotion)
-        let remainingMotion = allOrderedMotion.filter { u in !prioritizedMotionSet.contains(u) }
+        let rails = homeOnboardingWarmupRails(from: payload)
+        let steps = onboardingDiagonalWarmupSteps(rails: rails)
+        let signature = steps.map { "\($0.posters.joined(separator: "|"))@@\($0.motions.joined(separator: "|"))" }
+            .joined(separator: "##")
 
-        let prioritizedPoster = prioritizedHomeLandingPosterURLs(from: payload)
-        let allOrderedPoster = orderedHomeLandingPosterURLs(from: payload)
-        let prioritizedPosterSet = Set(prioritizedPoster)
-        let remainingPoster = allOrderedPoster.filter { u in !prioritizedPosterSet.contains(u) }
-
-        let signature = [
-            prioritizedMotion.joined(separator: "|"),
-            remainingMotion.joined(separator: "|"),
-            prioritizedPoster.joined(separator: "|"),
-            remainingPoster.joined(separator: "|")
-        ].joined(separator: "||")
-
+        let task: Task<Void, Never>
         if onboardingCatalogWarmupSignature == signature,
-           let onboardingCatalogWarmupTask,
-           !onboardingCatalogWarmupTask.isCancelled {
-            return
+           let existingTask = onboardingCatalogWarmupTask,
+           !existingTask.isCancelled {
+            task = existingTask
+        } else {
+            onboardingCatalogWarmupTask?.cancel()
+            onboardingCatalogWarmupSignature = signature
+            task = Task {
+                await self.runOnboardingDiagonalCatalogWarmup(steps: steps)
+            }
+            onboardingCatalogWarmupTask = task
         }
-
-        onboardingCatalogWarmupTask?.cancel()
-        onboardingCatalogWarmupSignature = signature
-        onboardingCatalogWarmupTask = Task {
-            await self.runOnboardingCatalogWarmup(
-                prioritizedMotion: prioritizedMotion,
-                remainingMotion: remainingMotion,
-                prioritizedPoster: prioritizedPoster,
-                remainingPoster: remainingPoster
-            )
-        }
+        await task.value
     }
 
     /// Detail session объединяет два шага: приоритет текущего пресета + prewarm соседей.
@@ -729,31 +780,121 @@ actor EffectsMediaOrchestrator {
         return urls.filter { seen.insert($0).inserted }
     }
 
-    /// Онбординг warmup в 2 фазы:
-    /// 1) hero + 2x3 верхних рельс, 2) весь остальной каталог последовательно.
-    /// Прогреваем и motion (включая raster webp/gif), и poster URLs.
-    private func runOnboardingCatalogWarmup(
-        prioritizedMotion: [String],
-        remainingMotion: [String],
-        prioritizedPoster: [String],
-        remainingPoster: [String]
+    /// Страховка для очередей prewarm: сохраняем порядок приоритетов, но не отправляем один и тот же URL повторно.
+    private func uniqueOrdered(_ urls: [String]) -> [String] {
+        var seen = Set<String>()
+        return urls.filter { seen.insert($0).inserted }
+    }
+
+    /// Одна ячейка рельса онбордингового прогрева: постер и motion совпадают по индексу с карточкой в payload.
+    private struct OnboardingHomeWarmupCell {
+        let posterURL: String?
+        let motionURL: String?
+    }
+
+    /// Рельсы как на главной: hero (если есть), затем секции по порядку.
+    private func homeOnboardingWarmupRails(from payload: EffectsHomePayload) -> [[OnboardingHomeWarmupCell]] {
+        var rails: [[OnboardingHomeWarmupCell]] = []
+        if let hero = payload.hero {
+            let heroRail = hero.items.map {
+                OnboardingHomeWarmupCell(
+                    posterURL: $0.preset.previewImageURL?.absoluteString,
+                    motionURL: $0.preset.previewVideoURL?.absoluteString
+                )
+            }
+            if !heroRail.isEmpty {
+                rails.append(heroRail)
+            }
+        }
+        for section in payload.sections {
+            let sectionRail = section.items.map {
+                OnboardingHomeWarmupCell(
+                    posterURL: $0.preset.previewImageURL?.absoluteString,
+                    motionURL: $0.preset.previewVideoURL?.absoluteString
+                )
+            }
+            if !sectionRail.isEmpty {
+                rails.append(sectionRail)
+            }
+        }
+        return rails
+    }
+
+    /// Диагональное окно: старт с `OnboardingHomeCatalogWarmup.initialRailWindow` рельс по `tilesPerWaveStride` плиток; каждый следующий цикл добавляет следующую рельсу и сдвигает уже открытые на +stride, пока не исчерпаем каталог.
+    /// Каждый шаг = одна рельса в текущем цикле: сначала постеры шага, затем сразу motion этого же шага; дубликаты URL отбрасываем глобально.
+    private func onboardingDiagonalWarmupSteps(
+        rails: [[OnboardingHomeWarmupCell]]
+    ) -> [(posters: [String], motions: [String])] {
+        guard !rails.isEmpty else { return [] }
+        let initialRailCount = OnboardingHomeCatalogWarmup.initialRailWindow
+        let tileStride = OnboardingHomeCatalogWarmup.tilesPerWaveStride
+        let numRails = rails.count
+        var steps: [(posters: [String], motions: [String])] = []
+        var seenPoster = Set<String>()
+        var seenMotion = Set<String>()
+        var cycle = 0
+        while true {
+            let maxRailExclusive = min(initialRailCount + cycle, numRails)
+            var didEmitStepInCycle = false
+            for r in 0..<maxRailExclusive {
+                let firstCycleForRail = max(0, r - (initialRailCount - 1))
+                guard cycle >= firstCycleForRail else { continue }
+                let chunk = cycle - firstCycleForRail
+                let lo = chunk * tileStride
+                let rail = rails[r]
+                guard lo < rail.count else { continue }
+                let hi = min(lo + tileStride, rail.count)
+                var posterStep: [String] = []
+                var motionStep: [String] = []
+                for idx in lo..<hi {
+                    let cell = rail[idx]
+                    if let p = cell.posterURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       p.hasPrefix("http"),
+                       seenPoster.insert(p).inserted {
+                        posterStep.append(p)
+                    }
+                    if let m = cell.motionURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       m.hasPrefix("http"),
+                       seenMotion.insert(m).inserted {
+                        motionStep.append(m)
+                    }
+                }
+                if !posterStep.isEmpty || !motionStep.isEmpty {
+                    steps.append((posterStep, motionStep))
+                    didEmitStepInCycle = true
+                }
+            }
+            if !didEmitStepInCycle { break }
+            cycle += 1
+        }
+        return steps
+    }
+
+    /// Онбординг: каждый диагональный шаг прогреваем парой "posters -> motion" (включая raster webp/gif).
+    private func runOnboardingDiagonalCatalogWarmup(
+        steps: [(posters: [String], motions: [String])]
     ) async {
-        await prewarmMotionURLsSequentially(
-            prioritizedMotion,
-            debugLogTag: "\(debugTag)[onboarding][phase1]"
-        )
-        await prewarmPosterURLsSequentially(
-            prioritizedPoster,
-            debugLogTag: "\(debugTag)[onboarding][phase1]"
-        )
-        await prewarmMotionURLsSequentially(
-            remainingMotion,
-            debugLogTag: "\(debugTag)[onboarding][phase2]"
-        )
-        await prewarmPosterURLsSequentially(
-            remainingPoster,
-            debugLogTag: "\(debugTag)[onboarding][phase2]"
-        )
+        await videoDiskCache.setSkipCatalogPreviewPriorityGateForOnboardingBulkPrewarm(true)
+        for (idx, step) in steps.enumerated() {
+            if Task.isCancelled {
+                await videoDiskCache.setSkipCatalogPreviewPriorityGateForOnboardingBulkPrewarm(false)
+                return
+            }
+            let waveTag = "\(debugTag)[onboarding][step\(idx)]"
+            await prewarmPosterURLsSequentially(step.posters, debugLogTag: waveTag)
+            if Task.isCancelled {
+                await videoDiskCache.setSkipCatalogPreviewPriorityGateForOnboardingBulkPrewarm(false)
+                return
+            }
+            await prewarmMotionURLsSequentially(step.motions, debugLogTag: waveTag)
+        }
+        await videoDiskCache.setSkipCatalogPreviewPriorityGateForOnboardingBulkPrewarm(false)
+    }
+
+    /// Хвост каталога не должен забивать `EffectPreviewVideoDiskCache` параллельно с онбординговым диагональным прогревом — иначе на главной «висят» лоадеры, пока очередь хвоста не исчерпана.
+    private func awaitOnboardingCatalogWarmupIfNeeded() async {
+        guard let task = onboardingCatalogWarmupTask else { return }
+        await task.value
     }
 
     /// Фоновая догрузка хвоста каталога: сначала motion, потом постеры; каждый шаг идёт последовательно и может быть прерван более новой переоценкой очереди.
@@ -762,8 +903,9 @@ actor EffectsMediaOrchestrator {
         posterURLs: [String],
         debugLogTag: String
     ) async {
-        await prewarmMotionURLsSequentially(motionURLs, debugLogTag: debugLogTag)
+        await awaitOnboardingCatalogWarmupIfNeeded()
         await prewarmPosterURLsSequentially(posterURLs, debugLogTag: debugLogTag)
+        await prewarmMotionURLsSequentially(motionURLs, debugLogTag: debugLogTag)
     }
 
     private func prewarmMotionURLsSequentially(_ urls: [String], debugLogTag: String) async {
@@ -789,13 +931,53 @@ actor EffectsMediaOrchestrator {
         }
     }
 
+    #if canImport(SDWebImage)
+    /// Prewarm WebP/GIF: только R2 с лимитом, затем зеркало — без опережающего запроса зеркала.
+    private func sdPrewarmLoadRasterCandidate(url: URL, r2FirstAttemptTimeout: TimeInterval?) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let gate = PrewarmRasterFirstAttemptGate()
+            var timeoutWorkItem: DispatchWorkItem?
+
+            let finish: (Bool) -> Void = { success in
+                timeoutWorkItem?.cancel()
+                DispatchQueue.main.async {
+                    guard gate.take() else { return }
+                    continuation.resume(returning: success)
+                }
+            }
+
+            if let t = r2FirstAttemptTimeout, t > 0 {
+                let item = DispatchWorkItem {
+                    finish(false)
+                }
+                timeoutWorkItem = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: item)
+            }
+
+            SDWebImageManager.shared.loadImage(
+                with: url,
+                options: [],
+                context: [.animatedImageClass: SDAnimatedImage.self],
+                progress: nil
+            ) { image, data, _, _, isFinished, _ in
+                guard isFinished else { return }
+                let ok = image != nil || data != nil
+                DispatchQueue.main.async {
+                    finish(ok)
+                }
+            }
+        }
+    }
+    #endif
+
     private func prewarmRasterMotionURLIfNeeded(_ urlString: String, debugLogTag: String) async {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("http"), !trimmed.isEmpty else { return }
         #if canImport(SDWebImage)
         guard let primaryURL = URL(string: trimmed) else { return }
         let candidates = [primaryURL] + (PreviewMediaURLFallback.fallbackURL(from: primaryURL).map { [$0] } ?? [])
-        for candidate in candidates {
+        let hasMirror = candidates.count > 1
+        for (index, candidate) in candidates.enumerated() {
             guard let cacheKey = SDWebImageManager.shared.cacheKey(for: candidate) else { continue }
             if SDImageCache.shared.imageFromMemoryCache(forKey: cacheKey) != nil ||
                 SDImageCache.shared.diskImageDataExists(withKey: cacheKey) {
@@ -808,20 +990,10 @@ actor EffectsMediaOrchestrator {
                 }
                 return
             }
-            let loaded = await withCheckedContinuation { continuation in
-                SDWebImageManager.shared.loadImage(
-                    with: candidate,
-                    options: [],
-                    context: [.animatedImageClass: SDAnimatedImage.self],
-                    progress: nil
-                ) { image, data, _, _, finished, _ in
-                    guard finished else { return }
-                    let success = image != nil || data != nil
-                    DispatchQueue.main.async {
-                        continuation.resume(returning: success)
-                    }
-                }
-            }
+            let r2Timeout: TimeInterval? = (index == 0 && hasMirror)
+                ? EffectPreviewPrimaryR2AttemptPolicy.rasterPrewarmFirstAttemptTimeoutSeconds
+                : nil
+            let loaded = await sdPrewarmLoadRasterCandidate(url: candidate, r2FirstAttemptTimeout: r2Timeout)
             if loaded {
                 await MainActor.run {
                     NotificationCenter.default.post(
@@ -843,7 +1015,11 @@ actor EffectsMediaOrchestrator {
         guard trimmed.hasPrefix("http"), !trimmed.isEmpty else { return }
         if ImageDownloader.shared.getCachedImage(from: trimmed) != nil { return }
         await withCheckedContinuation { continuation in
-            ImageDownloader.shared.downloadImage(from: trimmed, effectPreviewLogTag: debugLogTag) { _ in
+            ImageDownloader.shared.downloadImage(
+                from: trimmed,
+                effectPreviewLogTag: debugLogTag,
+                networkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds
+            ) { _ in
                 continuation.resume()
             }
         }
@@ -862,8 +1038,15 @@ actor EffectPreviewVideoDiskCache {
     /// Для home rails/view-all: последняя видимая карточка получает наивысший приоритет загрузки.
     private var highPriorityCatalogPreviewURL: URL?
     private var catalogPriorityGateWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Пока идёт массовый prewarm с онбординга, гейт «видимая карточка главной» отключаем — иначе все MP4 ждут один приоритетный URL.
+    private var skipCatalogPreviewPriorityGateForOnboardingBulkPrewarm = false
 
     private static let cacheDirectoryName = "EffectPreviewVideos"
+
+    /// Включается только на время `runOnboardingDiagonalCatalogWarmup`, чтобы prewarm не блокировался `setCatalogPreviewDownloadPriority` с главной.
+    func setSkipCatalogPreviewPriorityGateForOnboardingBulkPrewarm(_ value: Bool) {
+        skipCatalogPreviewPriorityGateForOnboardingBulkPrewarm = value
+    }
 
     /// Вызывается с Main **до** `currentScreen = .effectDetail`, чтобы первый же `playbackURL` знал приоритетный URL.
     nonisolated static func prepareDetailPreviewDownloadPriority(urlString: String?) {
@@ -968,6 +1151,7 @@ actor EffectPreviewVideoDiskCache {
 
     private func waitBehindCatalogPreviewPriorityGateIfNeeded(for remoteURL: URL) async {
         while !Task.isCancelled {
+            if skipCatalogPreviewPriorityGateForOnboardingBulkPrewarm { return }
             guard let priority = highPriorityCatalogPreviewURL else { return }
             guard priority.absoluteString != remoteURL.absoluteString else { return }
             let priorityFile = cacheFileURL(for: priority)
@@ -987,6 +1171,7 @@ actor EffectPreviewVideoDiskCache {
         inFlight.removeAll()
         highPriorityDetailPreviewURL = nil
         highPriorityCatalogPreviewURL = nil
+        skipCatalogPreviewPriorityGateForOnboardingBulkPrewarm = false
         Self.clearPendingDetailPreviewDownloadPriorityBootstrap()
         resumeDetailPriorityGateWaiters()
         resumeCatalogPriorityGateWaiters()
@@ -1011,6 +1196,18 @@ actor EffectPreviewVideoDiskCache {
                 )
             }
             return .hit(fileURL, bytes: bytes)
+        }
+        if let aliasedURL = aliasFallbackCachedFileIfNeeded(for: remoteURL, canonicalFileURL: fileURL),
+           let bytes = fileSize(at: aliasedURL), bytes > 0 {
+            resumeDetailPriorityGateIfPriorityFileReady(for: remoteURL, fileURL: aliasedURL)
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .effectPreviewVideoCacheUpdated,
+                    object: nil,
+                    userInfo: ["url": remoteURLString]
+                )
+            }
+            return .hit(aliasedURL, bytes: bytes)
         }
 
         await waitBehindDetailPreviewPriorityGateIfNeeded(for: remoteURL)
@@ -1072,6 +1269,25 @@ actor EffectPreviewVideoDiskCache {
         return Self.cacheFileURL(digest: digest, ext: ext)
     }
 
+    /// Миграция старого ключа fallback -> канонический URL: если файл уже есть под зеркалом, переиспользуем его и дублируем под основной ключ.
+    private func aliasFallbackCachedFileIfNeeded(for remoteURL: URL, canonicalFileURL: URL) -> URL? {
+        guard let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: remoteURL), fallbackURL != remoteURL else {
+            return nil
+        }
+        let fallbackFileURL = cacheFileURL(for: fallbackURL)
+        guard let fallbackBytes = fileSize(at: fallbackFileURL), fallbackBytes > 0 else {
+            return nil
+        }
+        if (fileSize(at: canonicalFileURL) ?? 0) <= 0 {
+            try? FileManager.default.removeItem(at: canonicalFileURL)
+            try? FileManager.default.copyItem(at: fallbackFileURL, to: canonicalFileURL)
+        }
+        if let canonicalBytes = fileSize(at: canonicalFileURL), canonicalBytes > 0 {
+            return canonicalFileURL
+        }
+        return fallbackFileURL
+    }
+
     private func fileSize(at url: URL) -> Int64? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? NSNumber else { return nil }
@@ -1102,11 +1318,33 @@ actor EffectPreviewVideoDiskCache {
             .joined()
         let ext = remoteURL.pathExtension.isEmpty ? "mp4" : remoteURL.pathExtension
         let fileURL = cacheFileURL(digest: digest, ext: ext)
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-              let size = attrs[.size] as? NSNumber else {
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attrs[.size] as? NSNumber,
+           size.int64Value > 0 {
+            return true
+        }
+        guard let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: remoteURL),
+              fallbackURL != remoteURL else {
             return false
         }
-        return size.int64Value > 0
+        let fallbackDigest = SHA256.hash(data: Data(fallbackURL.absoluteString.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let fallbackExt = fallbackURL.pathExtension.isEmpty ? "mp4" : fallbackURL.pathExtension
+        let fallbackFileURL = cacheFileURL(digest: fallbackDigest, ext: fallbackExt)
+        guard let fallbackAttrs = try? FileManager.default.attributesOfItem(atPath: fallbackFileURL.path),
+              let fallbackSize = fallbackAttrs[.size] as? NSNumber,
+              fallbackSize.int64Value > 0 else {
+            return false
+        }
+        // Нормализуем кэш на лету: после первого попадания по legacy fallback UI и prewarm видят канонический ключ.
+        let canonicalAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let canonicalSize = (canonicalAttrs?[.size] as? NSNumber)?.int64Value ?? 0
+        if canonicalSize <= 0 {
+            try? FileManager.default.removeItem(at: fileURL)
+            try? FileManager.default.copyItem(at: fallbackFileURL, to: fileURL)
+        }
+        return true
     }
 
     /// Сумма байт файлов в каталоге превью (до `clearAll()`).
@@ -1150,20 +1388,34 @@ actor EffectPreviewVideoDiskCache {
     }
 
     private static func download(remoteURL: URL, to destinationURL: URL) async throws -> URL {
+        // R2 в части регионов «висит» без быстрого error — без лимита на первую попытку prewarm/плеер долго стоят в очереди и fallback не наступает.
+        let primaryTimeout: TimeInterval? = PreviewMediaURLFallback.fallbackURL(from: remoteURL) != nil
+            ? EffectPreviewPrimaryR2AttemptPolicy.motionVideoDownloadTimeoutSeconds
+            : nil
         do {
-            return try await performDownload(from: remoteURL, to: destinationURL)
+            return try await performDownload(from: remoteURL, to: destinationURL, timeout: primaryTimeout)
         } catch {
             // Если исходный CDN недоступен (региональные блокировки), делаем retry по PixVerse URL, вычисленному из имени файла.
             guard let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: remoteURL),
                   fallbackURL != remoteURL else {
                 throw error
             }
-            return try await performDownload(from: fallbackURL, to: destinationURL)
+            return try await performDownload(from: fallbackURL, to: destinationURL, timeout: nil)
         }
     }
 
-    private static func performDownload(from sourceURL: URL, to destinationURL: URL) async throws -> URL {
-        let (tempURL, response) = try await URLSession.shared.download(from: sourceURL)
+    private static func performDownload(from sourceURL: URL, to destinationURL: URL, timeout: TimeInterval?) async throws -> URL {
+        let request: URLRequest
+        if let timeout {
+            request = URLRequest(
+                url: sourceURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: timeout
+            )
+        } else {
+            request = URLRequest(url: sourceURL)
+        }
+        let (tempURL, response) = try await URLSession.shared.download(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
@@ -1262,7 +1514,14 @@ private struct AnimatedRasterMotionView: View {
         self.shouldPlay = shouldPlay
         self.debugLogTag = debugLogTag
         self.onPlaybackReady = onPlaybackReady
+        #if canImport(SDWebImage)
+        let initialURL = MediaVideoPlayer.preferredRasterMotionURLForSDWebImageCache(canonical: url)
+        _activeURL = State(initialValue: initialURL)
+        _didTryPixverseFallback = State(initialValue: initialURL != url)
+        #else
         _activeURL = State(initialValue: url)
+        _didTryPixverseFallback = State(initialValue: false)
+        #endif
     }
 
     var body: some View {
@@ -1315,11 +1574,17 @@ private struct AnimatedRasterMotionView: View {
                 isAnimatingForSD = shouldPlay
                 if shouldPlay { nudgeRasterAnimatingAfterLoad() }
             }
-            .onChange(of: url) { _, _ in
+            .onChange(of: url) { _, newURL in
                 didEmitPlaybackReady = false
                 rasterImageDidFinishLoading = false
+                #if canImport(SDWebImage)
+                let initialURL = MediaVideoPlayer.preferredRasterMotionURLForSDWebImageCache(canonical: newURL)
+                activeURL = initialURL
+                didTryPixverseFallback = initialURL != newURL
+                #else
                 didTryPixverseFallback = false
-                activeURL = url
+                activeURL = newURL
+                #endif
                 isAnimatingForSD = shouldPlay
             }
             .onChange(of: shouldPlay) { _, isPlaying in
@@ -1426,8 +1691,10 @@ enum NonGalleryMediaCacheCleaner {
     static func clearAll() async {
         await MainActor.run {
             ImageDownloader.shared.clearCache()
+            AppState.shared.resetOnboardingHomeWarmupAfterCacheClear()
         }
         await EffectPreviewVideoDiskCache.shared.clearAll()
+        await EffectsMediaOrchestrator.shared.resetCatalogWarmupStateAfterCacheClear()
         #if canImport(SDWebImage)
         await clearSDWebImagePreviewCache()
         #endif

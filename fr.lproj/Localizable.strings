@@ -182,6 +182,12 @@
 "paywall_plan_annual" = "Annuel";
 "paywall_plan_monthly" = "Mensuel";
 "paywall_plan_weekly" = "Hebdomadaire";
+"paywall_plan_quarterly" = "Trimestriel";
+"paywall_plan_semiannual" = "Semestriel";
+"per_quarter" = "par trimestre";
+"per_6months" = "tous les 6 mois";
+"per_period_months_format" = "par %d mois";
+"per_period_weeks_format" = "par %d semaines";
 "save_75_percent" = "Économisez 75 %";
 "save" = "Enregistrer";
 "subscribe_for" = "S’abonner pour";

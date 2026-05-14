@@ -790,35 +790,77 @@ struct PaywallView: View {
            let count = paywallCache.generationLimit(for: product.vendorProductId, title: product.localizedTitle) {
             return "pack_get_format".localized(with: count)
         }
-        // Для подписок используем единые локализованные названия, чтобы UI не зависел от store title.
-        if let cadence = subscriptionCadence(for: product) {
-            switch cadence {
-            case .annual: return "paywall_plan_annual".localized
-            case .monthly: return "paywall_plan_monthly".localized
-            case .weekly: return "paywall_plan_weekly".localized
-            }
+        // Для подписок — локализованные заголовки; `subscriptionPeriod` + `subscriptionPeriodUnitCount` (Adapty/StoreKit), иначе fallback по id/title.
+        switch resolveSubscriptionPlanKind(product) {
+        case .annual: return "paywall_plan_annual".localized
+        case .semiannual: return "paywall_plan_semiannual".localized
+        case .quarterly: return "paywall_plan_quarterly".localized
+        case .monthly: return "paywall_plan_monthly".localized
+        case .weekly: return "paywall_plan_weekly".localized
+        case .lifetime, .unknown:
+            return product.localizedTitle
         }
-        return product.localizedTitle
     }
 
-    private enum SubscriptionCadence {
+    /// Классификация тарифа: как в storecards — учитываем `subscriptionPeriodUnitCount` (квартал = month×3, полгода = month×6).
+    private enum SubscriptionPlanKind {
         case annual
+        case semiannual
+        case quarterly
         case monthly
         case weekly
+        case lifetime
+        case unknown
     }
 
-    private func subscriptionCadence(for product: ProductInfo) -> SubscriptionCadence? {
-        guard !isPackProduct(product) else { return nil }
-        if let period = product.subscriptionPeriod?.lowercased() {
-            if period.contains("year") { return .annual }
-            if period.contains("month") { return .monthly }
-            if period.contains("week") { return .weekly }
+    private func resolveSubscriptionPlanKind(_ product: ProductInfo) -> SubscriptionPlanKind {
+        guard !isPackProduct(product) else { return .unknown }
+
+        let normalizedPeriod = product.subscriptionPeriod?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let unitCount = product.subscriptionPeriodUnitCount
+
+        switch normalizedPeriod {
+        case "year", "annual", "yearly":
+            return .annual
+        case "month", "monthly":
+            if unitCount == 6 { return .semiannual }
+            if unitCount == 3 { return .quarterly }
+            return .monthly
+        case "week", "weekly":
+            if unitCount == 2 { break }
+            return .weekly
+        default:
+            break
         }
-        let id = product.vendorProductId.lowercased()
-        if id.contains("annual") || id.contains("year") { return .annual }
-        if id.contains("monthly") || id.contains("month") { return .monthly }
-        if id.contains("weekly") || id.contains("week") { return .weekly }
-        return nil
+
+        let searchableText = "\(product.vendorProductId) \(product.localizedTitle)".lowercased()
+        if searchableText.contains("6 month") || searchableText.contains("6month") || searchableText.contains("6_month")
+            || searchableText.contains("semiannual") || searchableText.contains("half year") || searchableText.contains("halfyear")
+            || searchableText.contains("semest") {
+            return .semiannual
+        }
+        if searchableText.contains("quarter") || searchableText.contains("3_month") || searchableText.contains("3month")
+            || searchableText.contains("3 month") || searchableText.contains("trimest") {
+            return .quarterly
+        }
+        if searchableText.contains("year") || searchableText.contains("annual") || searchableText.contains("yearly") {
+            return .annual
+        }
+        if searchableText.contains("month") || searchableText.contains("monthly") {
+            return .monthly
+        }
+        if searchableText.contains("biweek") || searchableText.contains("2 week") || searchableText.contains("2week") || searchableText.contains("2_week") {
+            return .unknown
+        }
+        if searchableText.contains("week") || searchableText.contains("weekly") {
+            return .weekly
+        }
+        if searchableText.contains("lifetime") || searchableText.contains("forever") || searchableText.contains("one_time") {
+            return .lifetime
+        }
+        return .unknown
     }
     
     private func getProductSubtitle(_ product: ProductInfo) -> String {
@@ -833,7 +875,7 @@ struct PaywallView: View {
             let packProducts = getDisplayedProducts()
             let savings = calculatePackSavingsPercentage(for: product, allPacks: packProducts)
             if savings > 0 { return "-\(savings)%" }
-        } else if product.vendorProductId.contains("annual") {
+        } else if resolveSubscriptionPlanKind(product) == .annual {
             // Годовая: показываем «Save N%» (локализовано), а не «-N%» — слово помещается и читается лучше.
             let savings = calculateSavingsPercentage(for: product)
             if savings > 0 { return "paywall_save_percent_format".localized(with: savings) }
@@ -847,12 +889,38 @@ struct PaywallView: View {
         if let count = paywallCache.generationLimit(for: product.vendorProductId, title: product.localizedTitle) {
             return .tokenCount(count)
         }
+        let kind = resolveSubscriptionPlanKind(product)
+        switch kind {
+        case .annual:
+            return .caption("per_year".localized)
+        case .semiannual:
+            return .caption("per_6months".localized)
+        case .quarterly:
+            return .caption("per_quarter".localized)
+        case .monthly:
+            if let n = product.subscriptionPeriodUnitCount, n > 1 {
+                return .caption("per_period_months_format".localized(with: n))
+            }
+            return .caption("per_month".localized)
+        case .weekly:
+            if let n = product.subscriptionPeriodUnitCount, n > 1 {
+                return .caption("per_period_weeks_format".localized(with: n))
+            }
+            return .caption("per_week".localized)
+        case .lifetime:
+            return .caption("subscription".localized)
+        case .unknown:
+            break
+        }
+
         if let period = product.subscriptionPeriod, !period.isEmpty {
-            switch period {
-            case "year":  return .caption("per_year".localized)
-            case "week":  return .caption("per_week".localized)
-            case "month": return .caption("per_month".localized)
-            default:      return .caption(period)
+            switch period.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "year", "annual", "yearly": return .caption("per_year".localized)
+            case "week", "weekly": return .caption("per_week".localized)
+            case "month", "monthly": return .caption("per_month".localized)
+            default:
+                // Период не распознали (в т.ч. `unknown` из SDK) — подпись под ценой не показываем: заголовок карточки уже `localizedTitle` из стора.
+                return .none
             }
         }
         if product.vendorProductId.contains("annual") { return .caption("per_year".localized) }

@@ -113,6 +113,12 @@ final class AppState: ObservableObject {
         onboardingHomeWarmupTask = task
     }
 
+    /// Debug «Очистить кэш» из настроек: гарантированно сбрасываем in-flight онбординговый warmup, иначе повторный заход в онбординг переиспользует завершённую задачу и `prewarmHomeLandingFromOnboardingIfNeeded` мгновенно возвращается без работы.
+    func resetOnboardingHomeWarmupAfterCacheClear() {
+        onboardingHomeWarmupTask?.cancel()
+        onboardingHomeWarmupTask = nil
+    }
+
     /// Полноэкранный paywall поверх текущего маршрута (после закрытия остаёмся на том же экране).
     @Published var isPaywallOverlayPresented: Bool = false
     @Published var isProUser: Bool = false {

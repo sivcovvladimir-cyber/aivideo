@@ -222,6 +222,12 @@
 "paywall_plan_annual" = "Annual";
 "paywall_plan_monthly" = "Monthly";
 "paywall_plan_weekly" = "Weekly";
+"paywall_plan_quarterly" = "Quarterly";
+"paywall_plan_semiannual" = "Every 6 months";
+"per_quarter" = "per quarter";
+"per_6months" = "every 6 months";
+"per_period_months_format" = "per %d months";
+"per_period_weeks_format" = "per %d weeks";
 "save_75_percent" = "Save 75%";
 "save" = "Save";
 "subscribe_for" = "Subscribe for";

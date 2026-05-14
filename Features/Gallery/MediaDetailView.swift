@@ -843,7 +843,7 @@ struct ZoomableImageView: View {
         isRemoteLoading = true
         // Не обнуляем remoteImage здесь — иначе при повторном запуске task мелькает пусто/ошибка, хотя кэш уже есть.
 
-        ImageDownloader.shared.downloadImage(from: urlString, effectPreviewLogTag: nil) { result in
+        ImageDownloader.shared.downloadImage(from: urlString, effectPreviewLogTag: nil, networkRequestTimeout: nil) { result in
             DispatchQueue.main.async {
                 isRemoteLoading = false
                 switch result {

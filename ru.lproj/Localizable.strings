@@ -199,6 +199,12 @@
 "paywall_plan_annual" = "Годовая";
 "paywall_plan_monthly" = "Месячная";
 "paywall_plan_weekly" = "Недельная";
+"paywall_plan_quarterly" = "Квартальная";
+"paywall_plan_semiannual" = "На полгода";
+"per_quarter" = "в квартал";
+"per_6months" = "за 6 мес.";
+"per_period_months_format" = "за %d мес.";
+"per_period_weeks_format" = "за %d нед.";
 "save_75_percent" = "Экономия 75%";
 "save" = "Экономия";
 "subscribe_for" = "Подписка на";

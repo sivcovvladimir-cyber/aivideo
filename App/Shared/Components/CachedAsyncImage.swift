@@ -18,6 +18,8 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let placeholder: () -> Placeholder
     /// Если задан (например `"[effects-preview]"`), пишет в консоль этапы загрузки и кэша.
     let debugLogTag: String?
+    /// Не `nil` только там, где нужен лимит ожидания по сети (например постеры эффектов — см. `ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds`).
+    let networkRequestTimeout: TimeInterval?
 
     @State private var image: UIImage?
     @State private var cacheVersion = 0
@@ -29,11 +31,13 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     init(
         url: URL?,
         debugLogTag: String? = nil,
+        networkRequestTimeout: TimeInterval? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
         self.debugLogTag = debugLogTag
+        self.networkRequestTimeout = networkRequestTimeout
         self.content = content
         self.placeholder = placeholder
     }
@@ -138,7 +142,11 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             image = nil
             imageSourceURLString = nil
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                ImageDownloader.shared.downloadImage(from: urlString, effectPreviewLogTag: debugLogTag) { result in
+                ImageDownloader.shared.downloadImage(
+                    from: urlString,
+                    effectPreviewLogTag: debugLogTag,
+                    networkRequestTimeout: networkRequestTimeout
+                ) { result in
                     Task { @MainActor in
                         defer { continuation.resume() }
                         guard self.activeLoadKey == loadKey else {
@@ -184,6 +192,7 @@ extension CachedAsyncImage {
         self.init(
             url: url,
             debugLogTag: nil,
+            networkRequestTimeout: nil,
             content: { image in
                 AnyView(
                     image

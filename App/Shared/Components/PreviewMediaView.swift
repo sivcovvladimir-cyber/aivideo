@@ -1,8 +1,5 @@
 import SwiftUI
 import UIKit
-#if canImport(SDWebImage)
-import SDWebImage
-#endif
 
 // Общий медиа-слой для превью-плиток: постер может быть remote URL или уже загруженным UIImage, motion-слой поверх — локальное/remote видео или WebP.
 struct PreviewMediaView<Placeholder: View>: View {
@@ -19,6 +16,8 @@ struct PreviewMediaView<Placeholder: View>: View {
     let motionPlaybackVolumeOverride: Float?
     let debugLogTag: String?
     let debugContext: String?
+    /// Лимит сетевого ожидания при подгрузке remote-постера (только там, где передаём — каталог/detail эффектов).
+    let posterNetworkRequestTimeout: TimeInterval?
     /// Первый показ motion (не постер); hero ждёт это перед fallback-отсчётом для не-AV превью.
     let onMotionPlaybackReady: (() -> Void)?
     /// Для hero обычное видео переключает слайд в момент, когда ролик должен был уйти на новый цикл.
@@ -48,6 +47,7 @@ struct PreviewMediaView<Placeholder: View>: View {
         motionPlaybackVolumeOverride: Float? = nil,
         debugLogTag: String? = nil,
         debugContext: String? = nil,
+        posterNetworkRequestTimeout: TimeInterval? = nil,
         onMotionPlaybackReady: (() -> Void)? = nil,
         onMotionPlaybackLoop: (() -> Void)? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
@@ -64,6 +64,7 @@ struct PreviewMediaView<Placeholder: View>: View {
         self.motionPlaybackVolumeOverride = motionPlaybackVolumeOverride
         self.debugLogTag = debugLogTag
         self.debugContext = debugContext
+        self.posterNetworkRequestTimeout = posterNetworkRequestTimeout
         self.onMotionPlaybackReady = onMotionPlaybackReady
         self.onMotionPlaybackLoop = onMotionPlaybackLoop
         self.placeholder = placeholder
@@ -195,7 +196,11 @@ struct PreviewMediaView<Placeholder: View>: View {
                 .resizable()
                 .scaledToFill()
         } else if let imageURL {
-            CachedAsyncImage(url: imageURL, debugLogTag: debugLogTag) { image in
+            CachedAsyncImage(
+                url: imageURL,
+                debugLogTag: debugLogTag,
+                networkRequestTimeout: posterNetworkRequestTimeout
+            ) { image in
                 image
                     .resizable()
                     .scaledToFill()
@@ -239,7 +244,11 @@ struct PreviewMediaView<Placeholder: View>: View {
         }
         await MainActor.run {
             guard generation == remotePosterLoadGeneration else { return }
-            ImageDownloader.shared.downloadImage(from: urlString, effectPreviewLogTag: debugLogTag) { _ in
+            ImageDownloader.shared.downloadImage(
+                from: urlString,
+                effectPreviewLogTag: debugLogTag,
+                networkRequestTimeout: posterNetworkRequestTimeout
+            ) { _ in
                 Task { @MainActor in
                     guard generation == remotePosterLoadGeneration else { return }
                     upgradedRemotePoster = effectPreviewRemotePosterIfRenderable(
@@ -371,23 +380,7 @@ struct PreviewMediaView<Placeholder: View>: View {
     /// Для WebP/GIF `motion cache hit` должен соответствовать кэшу реального проигрывателя SDWebImage, а не старому `ImageDownloader`.
     private func isRasterMotionCachedForPlayback(_ urlString: String) -> Bool {
         #if canImport(SDWebImage)
-        guard let url = URL(string: urlString) else {
-            return false
-        }
-
-        // WebP/GIF может быть закэширован по PixVerse fallback-URL, если исходный R2 недоступен.
-        // Для UI это всё равно cache hit исходного motion: показываем тот же flow, что и при обычном SDWebImage hit.
-        let candidates = [url] + (PreviewMediaURLFallback.fallbackURL(from: url).map { [$0] } ?? [])
-        for candidate in candidates {
-            guard let cacheKey = SDWebImageManager.shared.cacheKey(for: candidate) else { continue }
-            if SDImageCache.shared.imageFromMemoryCache(forKey: cacheKey) != nil {
-                return true
-            }
-            if SDImageCache.shared.diskImageDataExists(withKey: cacheKey) {
-                return true
-            }
-        }
-        return false
+        return MediaVideoPlayer.isRasterMotionCachedInSDWebImage(forCanonical: urlString)
         #else
         return ImageDownloader.shared.hasRemoteImagePayloadCached(for: urlString)
         #endif

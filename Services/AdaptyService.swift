@@ -628,6 +628,55 @@ class AdaptyService: ObservableObject {
             }
         }
     }
+
+    /// Remote overlay из paywall Adapty для merge с бандлом. `nil` — нет данных / сеть / парсинг: не подменяем кэш «пустым» overlay (как в storecards).
+    func fetchPaywallConfigOverlayAsync(forceRefresh: Bool = false) async -> PaywallConfig? {
+        await withCheckedContinuation { continuation in
+            fetchPaywallConfigOverlay(forceRefresh: forceRefresh) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// То же, что `fetchPaywallConfig`, но без «фейкового успеха» с пустым `PaywallConfig` — только реальный remote JSON или `nil`.
+    private func fetchPaywallConfigOverlay(forceRefresh: Bool = false, completion: @escaping (PaywallConfig?) -> Void) {
+        guard ConfigurationManager.shared.isAdaptyConfigured else {
+            print("⚠️ [AdaptyService] fetchPaywallConfigOverlay: Adapty не сконфигурирован → overlay nil")
+            completion(nil)
+            return
+        }
+        Task { @MainActor in
+            do {
+                let paywall = try await fetchAdaptyPaywallAsync(forceRefresh: forceRefresh)
+                guard let remoteConfig = paywall.remoteConfig,
+                      let jsonData = remoteConfig.jsonString.data(using: .utf8) else {
+                    print("⚠️ [AdaptyService] fetchPaywallConfigOverlay: remoteConfig отсутствует → overlay nil")
+                    completion(nil)
+                    return
+                }
+                print("[paywall] fetchPaywallConfigOverlay: remoteConfig bytes=\(jsonData.count)")
+                let decoded: PaywallConfig
+                do {
+                    decoded = try JSONDecoder().decode(PaywallConfig.self, from: jsonData)
+                    print("✅ [AdaptyService] fetchPaywallConfigOverlay: полный JSON decode OK")
+                } catch {
+                    print("⚠️ [AdaptyService] fetchPaywallConfigOverlay: полный decode fail → partial: \(error)")
+                    do {
+                        decoded = try self.parsePartialConfig(from: jsonData)
+                        print("✅ [AdaptyService] fetchPaywallConfigOverlay: partial OK")
+                    } catch {
+                        print("🚨 [AdaptyService] fetchPaywallConfigOverlay: partial fail → nil: \(error)")
+                        completion(nil)
+                        return
+                    }
+                }
+                let withLimits = self.mergingGenerationLimitsFromRawJSON(decoded, jsonData: jsonData)
+                completion(withLimits)
+            } catch {
+                print("🚨 [AdaptyService] fetchPaywallConfigOverlay: getPaywall ошибка → nil: \(error)")
+                AdaptyVerboseLog.printError(tag: "fetchPaywallConfigOverlay", error: error)
+                completion(nil)
+            }
+        }
+    }
     
     // MARK: - Adapty Paywall Fetching
 

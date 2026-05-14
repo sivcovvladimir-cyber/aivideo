@@ -162,7 +162,8 @@ struct EffectCatalogRailCard: View {
             prefersMotionWhenCached: allowsMotionPreview,
             showsPosterBeforeMotion: showsPosterBeforeMotion,
             debugLogTag: nil,
-            debugContext: debugContext
+            debugContext: debugContext,
+            posterNetworkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds
         ) {
             // Как на detail: сначала лоадер, пока тянется remote-постер; затем картинка и поверх — видео (bundled-картинка без URL показывается сразу, без этого шага).
             if item.preset.previewImageURL != nil {
