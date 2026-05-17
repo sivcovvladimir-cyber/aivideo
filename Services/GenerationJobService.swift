@@ -10,9 +10,28 @@ enum GenerationJobPhase: Equatable {
     case saving
 }
 
+enum PromptVideoTwoImageMode: String, Codable, CaseIterable {
+    case transition
+    case fusion
+    case frames
+}
+
+/// Пресеты стиля перехода между двумя сценами (подставляются в промпт по тапу на чип).
+enum PromptVideoTransitionStyle: String, Codable, CaseIterable {
+    case matchOnAction
+    case whipPan
+    case matchCut
+    case zoomBlur
+    case dissolve
+    case smoothCrossfade
+    /// Последний в цикле: очищает промпт для своего описания.
+    case custom
+}
+
 enum GenerationJobRequest {
-    /// `aspectRatio` — только для text→video; при референсах оставляем `nil`, формат кадра задаёт вход. Два локальных файла → `first_frame_path` + `last_frame_path` после upload.
-    case promptVideo(prompt: String, duration: Int, audioEnabled: Bool, aspectRatio: String?, inputImagePath: String?, secondInputImagePath: String?)
+    /// `aspectRatio` — только для text→video; при референсах оставляем `nil`, формат кадра задаёт вход.
+    /// Для двух локальных фото используем отдельные API-режимы (`transition`/`fusion`/`frames`) после upload.
+    case promptVideo(prompt: String, duration: Int, audioEnabled: Bool, aspectRatio: String?, inputImagePath: String?, secondInputImagePath: String?, twoImageMode: PromptVideoTwoImageMode?)
     /// `aspectRatio` — только text→image; при референсах (`image_path_1`…`2`) не передаём в API — дефолт `auto` по документации useapi.
     case promptPhoto(prompt: String, aspectRatio: String?, inputImagePath: String?, secondInputImagePath: String?)
     case effect(preset: EffectPreset, inputImagePath: String)
@@ -61,6 +80,8 @@ struct LibraryGenerationJob: Codable, Identifiable {
     var state: LibraryGenerationJobState
     let createdAt: Date
     var providerJob: PixVerseCreatedJob?
+    /// Тело POST к провайдеру при создании задачи — для `generation_logs.request_metadata` при upsert и resume.
+    var providerRequestLog: PixVerseAPIRequestRecord?
 }
 
 @MainActor
@@ -80,8 +101,8 @@ final class GenerationJobService: ObservableObject {
     private var activeTask: Task<Void, Never>?
     /// v5: у `promptPhoto` `aspectRatio` опционален (i2i без явного aspect — провайдер по умолчанию `auto`).
     /// v6: `LibraryGenerationJob.id` — монотонный `Int` (не UUID).
-    /// v7: второй референс в `promptVideo` / `promptPhoto` + новый ключ `persistedJobsKey` (сброс старых закодированных джобов в UserDefaults).
-    private let persistedJobsKey = "aivideo_generation_recent_jobs_v7"
+    /// v8: режим двух фото в `promptVideo`; v9: `providerRequestLog` для полного JSON в `request_metadata`.
+    private let persistedJobsKey = "aivideo_generation_recent_jobs_v9"
     private static let nextJobIdKey = "aivideo_library_generation_job_next_id"
     private static let jobIdLock = NSLock()
 
@@ -179,23 +200,24 @@ final class GenerationJobService: ObservableObject {
     private func run(jobId: Int, request: GenerationJobRequest, cost: Int) async {
         var activeProviderJobId: String?
         do {
-            let createdJob = try await createJob(for: request)
-            activeProviderJobId = createdJob.id
+            let outcome = try await createJob(for: request)
+            activeProviderJobId = outcome.job.id
             phase = .processing
-            updateJobProvider(jobId, providerJob: createdJob)
+            updateJobProvider(jobId, providerJob: outcome.job, requestLog: outcome.requestRecord)
             updateJob(jobId, state: .processing)
             await Self.pushGenerationLog(
                 clientJobId: jobId,
                 request: request,
                 cost: cost,
                 status: "running",
-                providerJobId: createdJob.id,
+                providerJobId: outcome.job.id,
+                requestMetadata: outcome.requestRecord.supabaseRequestMetadata(),
                 resultURL: nil,
                 errorMessage: nil,
                 startedAt: Date(),
                 completedAt: nil
             )
-            let result = try await api.pollUntilCompleted(job: createdJob)
+            let result = try await api.pollUntilCompleted(job: outcome.job)
             phase = .saving
             let media = try await downloadAndSave(result: result, prompt: request.promptForLibrary)
 
@@ -204,7 +226,8 @@ final class GenerationJobService: ObservableObject {
                 request: request,
                 cost: cost,
                 status: "succeeded",
-                providerJobId: createdJob.id,
+                providerJobId: outcome.job.id,
+                requestMetadata: outcome.requestRecord.supabaseRequestMetadata(),
                 resultURL: result.url.absoluteString,
                 errorMessage: nil,
                 startedAt: nil,
@@ -216,12 +239,14 @@ final class GenerationJobService: ObservableObject {
             finishSuccess(media: media)
         } catch {
             billing.refund(cost: cost)
+            let failedRequestMetadata = recentJobs.first(where: { $0.id == jobId })?.providerRequestLog?.supabaseRequestMetadata()
             await Self.pushGenerationLog(
                 clientJobId: jobId,
                 request: request,
                 cost: cost,
                 status: "failed",
                 providerJobId: activeProviderJobId,
+                requestMetadata: failedRequestMetadata,
                 resultURL: nil,
                 errorMessage: error.localizedDescription,
                 startedAt: nil,
@@ -248,6 +273,7 @@ final class GenerationJobService: ObservableObject {
     }
 
     private func resumePolling(job: LibraryGenerationJob, providerJob: PixVerseCreatedJob) async {
+        let requestMetadata = job.providerRequestLog?.supabaseRequestMetadata()
         do {
             phase = .processing
             updateJob(job.id, state: .processing)
@@ -257,6 +283,7 @@ final class GenerationJobService: ObservableObject {
                 cost: job.cost,
                 status: "running",
                 providerJobId: providerJob.id,
+                requestMetadata: requestMetadata,
                 resultURL: nil,
                 errorMessage: nil,
                 startedAt: Date(),
@@ -271,6 +298,7 @@ final class GenerationJobService: ObservableObject {
                 cost: job.cost,
                 status: "succeeded",
                 providerJobId: providerJob.id,
+                requestMetadata: requestMetadata,
                 resultURL: result.url.absoluteString,
                 errorMessage: nil,
                 startedAt: nil,
@@ -287,6 +315,7 @@ final class GenerationJobService: ObservableObject {
                 cost: job.cost,
                 status: "failed",
                 providerJobId: providerJob.id,
+                requestMetadata: requestMetadata,
                 resultURL: nil,
                 errorMessage: error.localizedDescription,
                 startedAt: nil,
@@ -297,18 +326,52 @@ final class GenerationJobService: ObservableObject {
         }
     }
 
-    private func createJob(for request: GenerationJobRequest) async throws -> PixVerseCreatedJob {
+    private func createJob(for request: GenerationJobRequest) async throws -> PixVerseCreateJobOutcome {
         let replyRef = UUID().uuidString
 
         switch request {
-        case .promptVideo(let prompt, let duration, let audioEnabled, let aspectRatio, let inputImagePath, let secondInputImagePath):
+        case .promptVideo(let prompt, let duration, let audioEnabled, let aspectRatio, let inputImagePath, let secondInputImagePath, let twoImageMode):
             phase = .queued
             let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath)
             let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath)
+            // Когда пользователь добавляет 2 фото в режиме видео, роутим запрос на отдельные endpoint'ы:
+            // transition (дефолт), fusion или frames — чтобы не отправлять `last_frame_path` в `videos/create`.
+            if let first = uploadedFirst, let second = uploadedSecond {
+                switch twoImageMode ?? .transition {
+                case .transition:
+                    return try await api.createVideoTransition(PixVerseCreateTransitionVideoRequest(
+                        frame1Path: first,
+                        frame2Path: second,
+                        transitionPrompt: prompt,
+                        duration: duration,
+                        audio: audioEnabled,
+                        replyRef: replyRef
+                    ))
+                case .fusion:
+                    return try await api.createVideoFusion(PixVerseCreateFusionVideoRequest(
+                        prompt: prompt,
+                        frame1Path: first,
+                        frame2Path: second,
+                        duration: duration,
+                        audio: audioEnabled,
+                        aspectRatio: aspectRatio ?? "9:16",
+                        replyRef: replyRef
+                    ))
+                case .frames:
+                    return try await api.createVideoFrames(PixVerseCreateFramesVideoRequest(
+                        firstFramePath: first,
+                        lastFramePath: second,
+                        duration: duration,
+                        audio: audioEnabled,
+                        replyRef: replyRef
+                    ))
+                }
+            }
+
             return try await api.createVideo(PixVerseCreateVideoRequest(
                 prompt: prompt,
                 firstFramePath: uploadedFirst,
-                lastFramePath: uploadedSecond,
+                lastFramePath: nil,
                 templateId: nil,
                 duration: duration,
                 audio: audioEnabled,
@@ -416,9 +479,10 @@ final class GenerationJobService: ObservableObject {
         persistJobs()
     }
 
-    private func updateJobProvider(_ id: Int, providerJob: PixVerseCreatedJob) {
+    private func updateJobProvider(_ id: Int, providerJob: PixVerseCreatedJob, requestLog: PixVerseAPIRequestRecord?) {
         guard let index = recentJobs.firstIndex(where: { $0.id == id }) else { return }
         recentJobs[index].providerJob = providerJob
+        recentJobs[index].providerRequestLog = requestLog
         persistJobs()
     }
 
@@ -439,6 +503,7 @@ final class GenerationJobService: ObservableObject {
         cost: Int,
         status: String,
         providerJobId: String?,
+        requestMetadata: [String: Any]?,
         resultURL: String?,
         errorMessage: String?,
         startedAt: Date?,
@@ -460,6 +525,7 @@ final class GenerationJobService: ObservableObject {
             durationSeconds: meta.durationSeconds,
             audioEnabled: meta.audioEnabled,
             tokenCost: cost,
+            requestMetadata: requestMetadata,
             resultURL: resultURL,
             errorMessage: errorMessage,
             startedAt: startedAt,
@@ -491,7 +557,7 @@ private extension GenerationJobRequest {
     /// Поля для RPC `upsert_generation_log` (тип пресета, длительность, аудио).
     var generationLogRouting: (generationType: String, effectPresetId: Int?, aspectRatio: String?, durationSeconds: Int?, audioEnabled: Bool?) {
         switch self {
-        case .promptVideo(_, let duration, let audioEnabled, let aspectRatio, _, _):
+        case .promptVideo(_, let duration, let audioEnabled, let aspectRatio, _, _, _):
             return ("prompt_video", nil, aspectRatio, duration, audioEnabled)
         case .promptPhoto(_, let aspectRatio, _, _):
             return ("prompt_photo", nil, aspectRatio, nil, nil)
@@ -513,7 +579,7 @@ private extension GenerationJobRequest {
 
     var promptForLibrary: String? {
         switch self {
-        case .promptVideo(let prompt, _, _, _, _, _), .promptPhoto(let prompt, _, _, _):
+        case .promptVideo(let prompt, _, _, _, _, _, _), .promptPhoto(let prompt, _, _, _):
             return prompt
         case .effect(let preset, _):
             return preset.promptTemplate ?? preset.description ?? preset.title

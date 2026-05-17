@@ -217,6 +217,7 @@ public class SupabaseService: SupabaseServiceProtocol {
         durationSeconds: Int?,
         audioEnabled: Bool?,
         tokenCost: Int?,
+        requestMetadata: [String: Any]? = nil,
         resultURL: String?,
         errorMessage: String?,
         startedAt: Date?,
@@ -253,7 +254,7 @@ public class SupabaseService: SupabaseServiceProtocol {
             "p_generation_type": generationType,
             "p_status": status,
             "p_provider": "pixverse",
-            "p_request_metadata": ["platform": "ios"] as [String: Any],
+            "p_request_metadata": requestMetadata ?? (["platform": "ios"] as [String: Any]),
             "p_response_metadata": [String: Any](),
             "p_result_urls": [Any]()
         ]

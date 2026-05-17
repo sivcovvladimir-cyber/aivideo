@@ -10,11 +10,12 @@ enum PrimaryCTAFill: Equatable {
 
 /// Общие числа для главной CTA (вынесены из generic `PrimaryCTAChrome`: в Swift нельзя `static let` внутри обобщённого типа).
 private enum PrimaryCTAMetrics {
-    /// Основные полноширинные CTA (генерация, пейвол, загрузка фото): выше минимального 44 pt, визуально ближе к референсу Figma.
-    static let standardHeight: CGFloat = 64
+    /// Основные полноширинные CTA (генерация, пейвол, онбординг): Figma Auto layout H 56, corner 18.
+    static let standardHeight: CGFloat = 56
+    static let cornerRadius: CGFloat = 18
 }
 
-/// Общая оболочка полноширинной CTA: фиксированная высота, капсула, фон из темы; disabled-режим делаем приглушённым, но читаемым.
+/// Общая оболочка полноширинной CTA: фиксированная высота, скругление 18 pt, фон из темы; disabled-режим делаем приглушённым, но читаемым.
 struct PrimaryCTAChrome<Content: View>: View {
     var isEnabled: Bool = true
     var fill: PrimaryCTAFill = .productGradient
@@ -31,7 +32,7 @@ struct PrimaryCTAChrome<Content: View>: View {
             .frame(maxWidth: .infinity)
             .frame(height: chromeHeight)
             .background { backgroundView }
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: PrimaryCTAMetrics.cornerRadius, style: .continuous))
     }
 
     @ViewBuilder
@@ -62,7 +63,7 @@ struct PrimaryCTAChrome<Content: View>: View {
 }
 
 extension View {
-    /// Полноширинная основная CTA: капсула и фон из `AppTheme` (см. `PrimaryCTAChrome`).
+    /// Полноширинная основная CTA: скругление 18 pt и фон из `AppTheme` (см. `PrimaryCTAChrome`).
     func primaryCTAChrome(isEnabled: Bool = true, fill: PrimaryCTAFill = .productGradient, height: CGFloat? = nil) -> some View {
         PrimaryCTAChrome(isEnabled: isEnabled, fill: fill, height: height) { self }
     }

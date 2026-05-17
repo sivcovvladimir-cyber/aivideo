@@ -10,6 +10,10 @@ struct PromptGenerationView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
 
     @State private var mode: GenerationMode = .video
+    @State private var twoImageVideoMode: PromptVideoTwoImageMode = .transition
+    @State private var transitionStyle: PromptVideoTransitionStyle = .matchOnAction
+    /// `false` — на чипе «Выбрать тип», первый тап подставит пресет; `true` — цикл по коротким названиям.
+    @State private var transitionStyleChosen = false
     @State private var prompt: String = ""
     @State private var durationSeconds: Double = 5
     @State private var audioEnabled = false
@@ -38,7 +42,7 @@ struct PromptGenerationView: View {
 
     @State private var photoAspect: PhotoAspectRatio = .nineSixteen
     @State private var videoAspect: PhotoAspectRatio = .nineSixteen
-    /// До двух референсов: после persist — только JPEG/PNG для PixVerse (`GenerationJobRequest`: фото `image_path_*`, видео `first_frame_path` / `last_frame_path`).
+    /// До двух референсов: после persist — только JPEG/PNG для PixVerse (`GenerationJobRequest`: фото `image_path_*`, видео `transition` / `fusion` / `frames` при двух изображениях).
     @State private var referenceImageSlot0: UIImage?
     @State private var referenceImageSlot1: UIImage?
     @State private var pickerItemSlot0: PhotosPickerItem?
@@ -137,6 +141,22 @@ struct PromptGenerationView: View {
         }
     }
 
+    private var isTwoImageVideoScenario: Bool {
+        mode == .video && referenceImageSlot0 != nil && referenceImageSlot1 != nil
+    }
+
+    private var promptPlaceholderKey: String {
+        guard isTwoImageVideoScenario else { return "generation_prompt_placeholder" }
+        switch twoImageVideoMode {
+        case .transition:
+            return "generation_video_two_image_placeholder_transition"
+        case .fusion:
+            return "generation_video_two_image_placeholder_fusion"
+        case .frames:
+            return "generation_video_two_image_placeholder_frames"
+        }
+    }
+
     private var cost: Int {
         let calculator = GenerationCostCalculator()
         switch mode {
@@ -150,7 +170,16 @@ struct PromptGenerationView: View {
     }
 
     private var canSubmit: Bool {
-        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isTwoImageVideoScenario {
+            switch twoImageVideoMode {
+            case .fusion:
+                return !normalizedPrompt.isEmpty
+            case .transition, .frames:
+                return true
+            }
+        }
+        return !normalizedPrompt.isEmpty
     }
 
     private var canGenerate: Bool {
@@ -284,7 +313,9 @@ struct PromptGenerationView: View {
     private var promptCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             promptSection
-            promptActionsRow
+            if showsPromptActionsRow {
+                promptActionsRow
+            }
         }
         .padding(14)
         .background(
@@ -293,11 +324,19 @@ struct PromptGenerationView: View {
         )
     }
 
+    private var showsPromptActionsRow: Bool {
+        isTwoImageVideoScenario || !hasReferencePhotos
+    }
+
     private var promptSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("generation_prompt_title".localized)
-                .font(AppTheme.Typography.subtitle)
-                .foregroundColor(AppTheme.Colors.textPrimary)
+            HStack(alignment: .center, spacing: 8) {
+                Text("generation_prompt_title".localized)
+                    .font(AppTheme.Typography.subtitle)
+                    .foregroundColor(AppTheme.Colors.textPrimary)
+                Spacer(minLength: 0)
+                promptClearButton
+            }
 
             TextEditor(text: $prompt)
                 .font(AppTheme.Typography.body)
@@ -307,7 +346,7 @@ struct PromptGenerationView: View {
                 .padding(.horizontal, 2)
                 .overlay(alignment: .topLeading) {
                     if prompt.isEmpty {
-                        Text("generation_prompt_placeholder".localized)
+                        Text(promptPlaceholderKey.localized)
                             .font(AppTheme.Typography.body)
                             .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.44))
                             .padding(.horizontal, 8)
@@ -315,43 +354,154 @@ struct PromptGenerationView: View {
                             .allowsHitTesting(false)
                     }
                 }
+
         }
     }
 
-    // Нижняя строка карточки повторяет сценарий Figma: быстро очистить текст или получить случайный промпт в один тап.
+    private var promptClearButton: some View {
+        Button {
+            prompt = ""
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.red.opacity(prompt.isEmpty ? 0.45 : 0.92))
+                .frame(width: 34, height: 34)
+                .background(AppTheme.Colors.background.opacity(0.42), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .appPlainButtonStyle()
+        .disabled(prompt.isEmpty)
+        .accessibilityLabel(Text(verbatim: "Clear prompt"))
+    }
+
+    // Нижняя строка карточки: чипы и «Удиви меня» — по правому краю.
     private var promptActionsRow: some View {
-        HStack(spacing: 10) {
-            Button {
-                prompt = ""
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.red.opacity(prompt.isEmpty ? 0.45 : 0.92))
-                    .frame(width: 34, height: 34)
-                    .background(AppTheme.Colors.background.opacity(0.42), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .appPlainButtonStyle()
-            .disabled(prompt.isEmpty)
-            .accessibilityLabel(Text(verbatim: "Clear prompt"))
-
-            Spacer(minLength: 0)
-
-            Button {
-                applySurprisePrompt()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("surprise_me".localized)
-                        .font(AppTheme.Typography.bodySecondary.weight(.semibold))
+        Group {
+            if isTwoImageVideoScenario {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    ViewThatFits(in: .horizontal) {
+                        twoImageVideoChipsRow(fusionTagsCompact: false)
+                        twoImageVideoChipsRow(fusionTagsCompact: true)
+                    }
                 }
-                .foregroundColor(AppTheme.Colors.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(AppTheme.Colors.background.opacity(0.42), in: Capsule())
+            } else if !hasReferencePhotos {
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    promptActionCapsule(
+                        title: "surprise_me".localized,
+                        systemImage: "sparkles",
+                        accessibilityLabel: "surprise_me".localized,
+                        accessibilityValue: nil,
+                        action: applySurprisePrompt
+                    )
+                    .disabled(generationJob.isRunning)
+                }
             }
-            .appPlainButtonStyle()
-            .disabled(generationJob.isRunning)
+        }
+    }
+
+    private func twoImageVideoChipsRow(fusionTagsCompact: Bool) -> some View {
+        HStack(spacing: 8) {
+            if twoImageVideoMode == .transition {
+                promptActionCapsule(
+                    title: transitionStyleChipTitle,
+                    accessibilityLabel: "generation_video_transition_style_accessibility".localized,
+                    accessibilityValue: transitionStyleChipTitle,
+                    action: cycleTransitionStyle,
+                    reservesFullWidth: true
+                )
+            }
+            if twoImageVideoMode == .fusion {
+                ForEach(availableFusionTags, id: \.self) { tag in
+                    promptActionCapsule(
+                        title: tag,
+                        accessibilityLabel: tag,
+                        accessibilityValue: nil,
+                        action: { insertFusionTag(tag) },
+                        useCompactTitle: fusionTagsCompact
+                    )
+                }
+            }
+            promptActionCapsule(
+                title: localizedTitle(for: twoImageVideoMode),
+                systemImage: systemImageName(for: twoImageVideoMode),
+                accessibilityLabel: "generation_video_two_image_mode_accessibility".localized,
+                accessibilityValue: localizedTitle(for: twoImageVideoMode),
+                action: cycleTwoImageVideoMode,
+                reservesFullWidth: true
+            )
+        }
+    }
+
+    private var transitionStyleChipTitle: String {
+        if transitionStyleChosen {
+            return transitionStyle.shortTitleLocalized
+        }
+        return "generation_video_transition_style_choose".localized
+    }
+
+    /// Чип в стиле «Удиви меня»: капсула в нижней строке промпт-карточки.
+    private func promptActionCapsule(
+        title: String,
+        systemImage: String? = nil,
+        accessibilityLabel: String,
+        accessibilityValue: String?,
+        action: @escaping () -> Void,
+        useCompactTitle: Bool = false,
+        reservesFullWidth: Bool = false
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: systemImage == nil ? 0 : 6) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: useCompactTitle ? 11 : 12, weight: .semibold))
+                }
+                Text(title)
+                    .font(
+                        useCompactTitle
+                            ? AppTheme.Typography.caption.weight(.semibold)
+                            : AppTheme.Typography.bodySecondary.weight(.semibold)
+                    )
+                    .lineLimit(1)
+            }
+            .foregroundColor(AppTheme.Colors.textPrimary)
+            .padding(.horizontal, useCompactTitle ? 10 : 14)
+            .padding(.vertical, useCompactTitle ? 8 : 10)
+            .background(AppTheme.Colors.background.opacity(0.42), in: Capsule())
+        }
+        .appPlainButtonStyle()
+        .accessibilityLabel(Text(accessibilityLabel))
+        .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))
+        .layoutPriority(reservesFullWidth ? 1 : 0)
+        .fixedSize(horizontal: reservesFullWidth, vertical: false)
+    }
+
+/// Подставляет `accessibilityValue` только когда есть осмысленное значение (не пустая строка для VoiceOver).
+private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
+    let value: String?
+
+    func body(content: Content) -> some View {
+        if let value, !value.isEmpty {
+            content.accessibilityValue(Text(value))
+        } else {
+            content
+        }
+    }
+}
+
+    private func systemImageName(for mode: PromptVideoTwoImageMode) -> String {
+        switch mode {
+        case .transition: return "arrow.left.arrow.right"
+        case .fusion: return "square.on.square"
+        case .frames: return "square.stack.3d.up.fill"
+        }
+    }
+
+    private func localizedTitle(for mode: PromptVideoTwoImageMode) -> String {
+        switch mode {
+        case .transition: return "generation_video_two_image_mode_transition".localized
+        case .fusion: return "generation_video_two_image_mode_fusion".localized
+        case .frames: return "generation_video_two_image_mode_frames".localized
         }
     }
 
@@ -394,6 +544,50 @@ struct PromptGenerationView: View {
         prompt = nextPrompt
     }
 
+    private var availableFusionTags: [String] {
+        let tags = ["@image1", "@image2"]
+        return tags.filter { !prompt.localizedCaseInsensitiveContains($0) }
+    }
+
+    private var isTypingFusionTagTrigger: Bool {
+        let token = promptLastToken
+        return token.hasPrefix("@")
+    }
+
+    private var promptLastToken: String {
+        guard !prompt.isEmpty else { return "" }
+        if let lastWhitespace = prompt.lastIndex(where: { $0.isWhitespace || $0.isNewline }) {
+            let start = prompt.index(after: lastWhitespace)
+            return String(prompt[start...])
+        }
+        return prompt
+    }
+
+    private func insertFusionTag(_ tag: String) {
+        if prompt.isEmpty {
+            prompt = "\(tag) "
+            return
+        }
+
+        if isTypingFusionTagTrigger,
+           let lastWhitespace = prompt.lastIndex(where: { $0.isWhitespace || $0.isNewline }) {
+            let start = prompt.index(after: lastWhitespace)
+            prompt.replaceSubrange(start..<prompt.endIndex, with: "\(tag) ")
+            return
+        }
+
+        if isTypingFusionTagTrigger {
+            prompt = "\(tag) "
+            return
+        }
+
+        if prompt.last?.isWhitespace == true || prompt.last?.isNewline == true {
+            prompt += "\(tag) "
+        } else {
+            prompt += " \(tag) "
+        }
+    }
+
     private func cycleVideoAspect() {
         let all = PhotoAspectRatio.allCases
         guard let i = all.firstIndex(of: videoAspect) else { return }
@@ -420,7 +614,7 @@ struct PromptGenerationView: View {
         .accessibilityValue(Text(videoAspect.rawValue))
     }
 
-    /// Ряд настроек видео повторяет макет: aspect ratio первым, затем длительность; audio — через встроенный switch.
+    /// Ряд настроек видео: aspect (без референсов), длительность, audio.
     private var videoSettingsSection: some View {
         HStack(alignment: .center, spacing: 10) {
             if !hasReferencePhotos {
@@ -459,6 +653,49 @@ struct PromptGenerationView: View {
         }
         let next = choices[(index + 1) % choices.count]
         durationSeconds = Double(next)
+    }
+
+    private func cycleTwoImageVideoMode() {
+        let all = PromptVideoTwoImageMode.allCases
+        guard let index = all.firstIndex(of: twoImageVideoMode) else { return }
+        let previous = twoImageVideoMode
+        if promptMatchesBuiltinTransitionPresetExactly() {
+            prompt = ""
+        }
+        twoImageVideoMode = all[(index + 1) % all.count]
+        if previous != .transition, twoImageVideoMode == .transition {
+            transitionStyleChosen = false
+        }
+    }
+
+    private func cycleTransitionStyle() {
+        let all = PromptVideoTransitionStyle.allCases
+        if !transitionStyleChosen {
+            transitionStyleChosen = true
+            transitionStyle = all[0]
+        } else if let index = all.firstIndex(of: transitionStyle) {
+            transitionStyle = all[(index + 1) % all.count]
+        }
+        applyTransitionStyleToPrompt(transitionStyle)
+    }
+
+    /// Тексты пресетов типа перехода (без «Указать свой») — для сброса промпта при смене режима видео.
+    private func promptMatchesBuiltinTransitionPresetExactly() -> Bool {
+        let normalized = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        return PromptVideoTransitionStyle.allCases
+            .filter { $0 != .custom }
+            .map(\.promptLocalized)
+            .contains(normalized)
+    }
+
+    private func applyTransitionStyleToPrompt(_ style: PromptVideoTransitionStyle) {
+        switch style {
+        case .custom:
+            prompt = ""
+        default:
+            prompt = style.promptLocalized
+        }
     }
 
     private var videoAudioPill: some View {
@@ -552,8 +789,8 @@ struct PromptGenerationView: View {
                 Button {
                     clearReferenceSlot(slot)
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(AppTheme.Colors.onPrimaryText)
                         .frame(width: 24, height: 24)
                         .background(Color.black.opacity(0.55), in: Circle())
@@ -634,6 +871,8 @@ struct PromptGenerationView: View {
         }
         return GenerationPromptScreenDraft(
             modeRaw: mode.rawValue,
+            videoTwoImageModeRaw: twoImageVideoMode.rawValue,
+            videoTransitionStyleRaw: transitionStyleChosen ? transitionStyle.rawValue : nil,
             prompt: prompt,
             durationSeconds: normalizedDurationSeconds(durationSeconds),
             audioEnabled: audioEnabled,
@@ -646,6 +885,15 @@ struct PromptGenerationView: View {
 
     private func applyGenerationScreenDraft(_ draft: GenerationPromptScreenDraft) {
         mode = GenerationMode(rawValue: draft.modeRaw) ?? .video
+        twoImageVideoMode = PromptVideoTwoImageMode(rawValue: draft.videoTwoImageModeRaw ?? "") ?? .transition
+        if let raw = draft.videoTransitionStyleRaw,
+           let style = PromptVideoTransitionStyle(rawValue: raw) {
+            transitionStyle = style
+            transitionStyleChosen = true
+        } else {
+            transitionStyle = .matchOnAction
+            transitionStyleChosen = false
+        }
         prompt = draft.prompt
         durationSeconds = normalizedDurationSeconds(draft.durationSeconds)
         audioEnabled = draft.audioEnabled
@@ -683,6 +931,20 @@ struct PromptGenerationView: View {
         }
 
         let anyReference = firstPath != nil || secondPath != nil
+        let isTwoImageVideo = mode == .video && firstPath != nil && secondPath != nil
+
+        if isTwoImageVideo, twoImageVideoMode == .fusion {
+            let lowercasedPrompt = normalizedPrompt.lowercased()
+            if !lowercasedPrompt.contains("@image1") || !lowercasedPrompt.contains("@image2") {
+                appState.notificationManager.showError(
+                    "generation_video_two_image_fusion_tags_required".localized,
+                    customDuration: 5,
+                    sizing: .fitContent
+                )
+                return
+            }
+        }
+
         // При старте генерации показывается fullscreen-оверлей: закрываем клавиатуру,
         // чтобы не оставлять её поверх экрана и не создавать визуальный конфликт.
         dismissKeyboard()
@@ -694,9 +956,10 @@ struct PromptGenerationView: View {
                     prompt: normalizedPrompt,
                     duration: Int(durationSeconds.rounded()),
                     audioEnabled: audioEnabled,
-                    aspectRatio: anyReference ? nil : videoAspect.rawValue,
+                    aspectRatio: isTwoImageVideo && twoImageVideoMode == .fusion ? videoAspect.rawValue : (anyReference ? nil : videoAspect.rawValue),
                     inputImagePath: firstPath,
-                    secondInputImagePath: secondPath
+                    secondInputImagePath: secondPath,
+                    twoImageMode: isTwoImageVideo ? twoImageVideoMode : nil
                 ),
                 cost: cost
             )
@@ -740,6 +1003,35 @@ struct PromptGenerationView: View {
             }
         } catch {
             appState.notificationManager.showError(error.localizedDescription, customDuration: 5, sizing: .fitContent)
+        }
+    }
+}
+
+// MARK: - Пресеты типа перехода (короткое имя на чипе, полный текст — в промпт)
+
+private extension PromptVideoTransitionStyle {
+    var localizationKeySuffix: String {
+        switch self {
+        case .smoothCrossfade: return "smooth_crossfade"
+        case .matchCut: return "match_cut"
+        case .whipPan: return "whip_pan"
+        case .matchOnAction: return "match_on_action"
+        case .zoomBlur: return "zoom_blur"
+        case .dissolve: return "dissolve"
+        case .custom: return "custom"
+        }
+    }
+
+    var shortTitleLocalized: String {
+        "generation_video_transition_style_short_\(localizationKeySuffix)".localized
+    }
+
+    var promptLocalized: String {
+        switch self {
+        case .custom:
+            return ""
+        default:
+            return "generation_video_transition_style_prompt_\(localizationKeySuffix)".localized
         }
     }
 }

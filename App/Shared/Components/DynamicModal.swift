@@ -265,7 +265,7 @@ struct DynamicModal: View {
                             .font(AppTheme.Typography.cardTitle)
                             .foregroundColor(.white)
                             // Та же заливка, что у главных CTA (генерация, пейвол), а не плоский `primary` из `.solidAccent`.
-                            .primaryCTAChrome(isEnabled: true, fill: .productGradient, height: 54)
+                            .primaryCTAChrome(isEnabled: true, fill: .productGradient)
                     }
                     .appPlainButtonStyle()
                     

@@ -17,6 +17,33 @@ struct PixVerseCreateVideoRequest {
     let replyRef: String
 }
 
+struct PixVerseCreateTransitionVideoRequest {
+    let frame1Path: String
+    let frame2Path: String
+    let transitionPrompt: String
+    let duration: Int
+    let audio: Bool?
+    let replyRef: String
+}
+
+struct PixVerseCreateFusionVideoRequest {
+    let prompt: String
+    let frame1Path: String
+    let frame2Path: String
+    let duration: Int
+    let audio: Bool?
+    let aspectRatio: String
+    let replyRef: String
+}
+
+struct PixVerseCreateFramesVideoRequest {
+    let firstFramePath: String
+    let lastFramePath: String
+    let duration: Int
+    let audio: Bool?
+    let replyRef: String
+}
+
 struct PixVerseCreateImageRequest {
     let prompt: String
     let imagePath: String?
@@ -43,12 +70,49 @@ struct PixVerseUploadResult {
     let url: URL?
 }
 
+/// Снимок тела POST к PixVerse/useapi для `generation_logs.request_metadata`.
+struct PixVerseAPIRequestRecord: Codable, Equatable {
+    let endpoint: String
+    let httpMethod: String
+    let bodyJSON: String
+
+    init?(endpoint: String, httpMethod: String = "POST", body: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(body),
+              let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        self.endpoint = endpoint
+        self.httpMethod = httpMethod
+        self.bodyJSON = json
+    }
+
+    /// Полный контекст запроса: платформа + endpoint + JSON, который ушёл в API.
+    func supabaseRequestMetadata() -> [String: Any] {
+        var metadata: [String: Any] = [
+            "platform": "ios",
+            "endpoint": endpoint,
+            "http_method": httpMethod
+        ]
+        if let data = bodyJSON.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: data) {
+            metadata["body"] = parsed
+        }
+        return metadata
+    }
+}
+
+struct PixVerseCreateJobOutcome {
+    let job: PixVerseCreatedJob
+    let requestRecord: PixVerseAPIRequestRecord
+}
+
 final class PixVerseAPIService {
     static let shared = PixVerseAPIService()
 
     private let baseURL = URL(string: "https://api.useapi.net/v2/pixverse")!
     private let defaultVideoModel = "pixverse-c1"
-    private let defaultVideoQuality = "540p"
+    private let defaultVideoQuality = "720p"
     private let defaultImageModel = "nano-banana-2"
     private let defaultImageQuality = "1080p"
     private let maxJobs = 3
@@ -90,10 +154,10 @@ final class PixVerseAPIService {
         throw NetworkError.uploadFailed
     }
 
-    func createVideo(_ payload: PixVerseCreateVideoRequest) async throws -> PixVerseCreatedJob {
+    func createVideo(_ payload: PixVerseCreateVideoRequest) async throws -> PixVerseCreateJobOutcome {
         guard isConfigured else { throw NetworkError.invalidConfiguration }
 
-        let url = baseURL.appendingPathComponent("videos/create")
+        let endpointPath = "videos/create"
         var body: [String: Any] = [
             "prompt": payload.prompt,
             "duration": payload.duration,
@@ -128,17 +192,24 @@ final class PixVerseAPIService {
             body["audio"] = audio
         }
 
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
         let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
         if let videoId = response.videoId, !videoId.isEmpty {
-            return PixVerseCreatedJob(id: videoId, kind: .video)
+            return PixVerseCreateJobOutcome(
+                job: PixVerseCreatedJob(id: videoId, kind: .video),
+                requestRecord: requestRecord
+            )
         }
         throw NetworkError.invalidResponse
     }
 
-    func createImage(_ payload: PixVerseCreateImageRequest) async throws -> PixVerseCreatedJob {
+    func createImage(_ payload: PixVerseCreateImageRequest) async throws -> PixVerseCreateJobOutcome {
         guard isConfigured else { throw NetworkError.invalidConfiguration }
 
-        let url = baseURL.appendingPathComponent("images/create")
+        let endpointPath = "images/create"
         var body: [String: Any] = [
             "prompt": payload.prompt,
             "model": defaultImageModel,
@@ -161,10 +232,130 @@ final class PixVerseAPIService {
             body["image_path_2"] = second
         }
 
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
         let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
         let imageId = response.successIds?.first ?? response.imageId
         if let imageId, !imageId.isEmpty {
-            return PixVerseCreatedJob(id: imageId, kind: .image)
+            return PixVerseCreateJobOutcome(
+                job: PixVerseCreatedJob(id: imageId, kind: .image),
+                requestRecord: requestRecord
+            )
+        }
+        throw NetworkError.invalidResponse
+    }
+
+    func createVideoTransition(_ payload: PixVerseCreateTransitionVideoRequest) async throws -> PixVerseCreateJobOutcome {
+        guard isConfigured else { throw NetworkError.invalidConfiguration }
+
+        let endpointPath = "videos/create-transition"
+        var body: [String: Any] = [
+            "frame_1_path": payload.frame1Path,
+            "frame_2_path": payload.frame2Path,
+            "duration_1_to_2": max(1, min(8, payload.duration)),
+            "quality": defaultVideoQuality,
+            "replyRef": payload.replyRef,
+            "maxJobs": maxJobs,
+            "off_peak_mode": false
+        ]
+
+        if let accountEmail {
+            body["email"] = accountEmail
+        }
+        let prompt = payload.transitionPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !prompt.isEmpty {
+            body["prompt_1_to_2"] = prompt
+        }
+        if let audio = payload.audio {
+            body["audio"] = audio
+        }
+
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
+        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
+        if let videoId = response.videoId, !videoId.isEmpty {
+            return PixVerseCreateJobOutcome(
+                job: PixVerseCreatedJob(id: videoId, kind: .video),
+                requestRecord: requestRecord
+            )
+        }
+        throw NetworkError.invalidResponse
+    }
+
+    func createVideoFusion(_ payload: PixVerseCreateFusionVideoRequest) async throws -> PixVerseCreateJobOutcome {
+        guard isConfigured else { throw NetworkError.invalidConfiguration }
+
+        let endpointPath = "videos/create-fusion"
+        var body: [String: Any] = [
+            "model": defaultVideoModel,
+            "prompt": payload.prompt,
+            "frame_1_path": payload.frame1Path,
+            "frame_2_path": payload.frame2Path,
+            "duration": payload.duration,
+            "quality": defaultVideoQuality,
+            "aspect_ratio": payload.aspectRatio,
+            "replyRef": payload.replyRef,
+            "maxJobs": maxJobs,
+            "off_peak_mode": false
+        ]
+
+        if let accountEmail {
+            body["email"] = accountEmail
+        }
+        if let audio = payload.audio {
+            body["audio"] = audio
+        }
+
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
+        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
+        if let videoId = response.videoId, !videoId.isEmpty {
+            return PixVerseCreateJobOutcome(
+                job: PixVerseCreatedJob(id: videoId, kind: .video),
+                requestRecord: requestRecord
+            )
+        }
+        throw NetworkError.invalidResponse
+    }
+
+    func createVideoFrames(_ payload: PixVerseCreateFramesVideoRequest) async throws -> PixVerseCreateJobOutcome {
+        guard isConfigured else { throw NetworkError.invalidConfiguration }
+
+        let endpointPath = "videos/create-frames"
+        var body: [String: Any] = [
+            "model": defaultVideoModel,
+            "first_frame_path": payload.firstFramePath,
+            "last_frame_path": payload.lastFramePath,
+            "duration": payload.duration,
+            "quality": defaultVideoQuality,
+            "replyRef": payload.replyRef,
+            "maxJobs": maxJobs,
+            "off_peak_mode": false
+        ]
+
+        if let accountEmail {
+            body["email"] = accountEmail
+        }
+        if let audio = payload.audio {
+            body["audio"] = audio
+        }
+
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
+        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
+        if let videoId = response.videoId, !videoId.isEmpty {
+            return PixVerseCreateJobOutcome(
+                job: PixVerseCreatedJob(id: videoId, kind: .video),
+                requestRecord: requestRecord
+            )
         }
         throw NetworkError.invalidResponse
     }
@@ -198,10 +389,14 @@ final class PixVerseAPIService {
         switch job.kind {
         case .video:
             let status = try await get(url: url, decode: PixVerseVideoStatusResponse.self)
+            // UseAPI иногда возвращает `QUEUED` как `final=true`; не считаем это фейлом и продолжаем polling.
+            if status.shouldContinuePolling {
+                return nil
+            }
             if status.isTerminalFailure {
                 throw NetworkError.serverError(status.error ?? status.videoStatusName ?? "Video generation failed")
             }
-            guard status.videoStatusFinal == true || status.videoStatusName == "COMPLETED" else { return nil }
+            guard status.isCompleted else { return nil }
             guard let urlString = status.url, let resultURL = URL(string: urlString) else { throw NetworkError.invalidResponse }
             return PixVerseCompletedResult(id: job.id, kind: .video, url: resultURL)
 
@@ -343,8 +538,20 @@ private struct PixVerseVideoStatusResponse: Decodable {
     let videoStatusName: String?
     let videoStatusFinal: Bool?
 
+    private var normalizedStatusName: String {
+        (videoStatusName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
+    var isCompleted: Bool {
+        normalizedStatusName == "COMPLETED"
+    }
+
+    var shouldContinuePolling: Bool {
+        !isCompleted && (normalizedStatusName == "QUEUED" || videoStatusFinal != true)
+    }
+
     var isTerminalFailure: Bool {
-        videoStatusFinal == true && videoStatusName != "COMPLETED"
+        videoStatusFinal == true && !isCompleted && normalizedStatusName != "QUEUED"
     }
 
     enum CodingKeys: String, CodingKey {

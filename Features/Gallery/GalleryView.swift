@@ -723,7 +723,7 @@ struct LibraryJobCardView: View {
         case .promptPhoto(_, let aspect, _, _):
             // Без явного aspect (i2i) плитка — нейтральный квадрат до готового результата.
             return parseAspectRatioString(aspect) ?? 1
-        case .promptVideo(_, _, _, let aspect, _, _):
+        case .promptVideo(_, _, _, let aspect, _, _, _):
             return parseAspectRatioString(aspect) ?? (9.0 / 16.0)
         case .effect(let preset, _):
             return parseAspectRatioString(preset.aspectRatio) ?? (9.0 / 16.0)
