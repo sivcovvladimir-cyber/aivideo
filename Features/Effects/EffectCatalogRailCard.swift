@@ -19,6 +19,7 @@ struct EffectCatalogRailCard: View {
     let onTap: () -> Void
 
     @State private var isVisibleInHierarchy = true
+    @State private var isActuallyVisibleOnScreen = false
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -67,6 +68,7 @@ struct EffectCatalogRailCard: View {
         motionURLString != nil &&
         autoplayEnabled &&
         isVisibleInHierarchy &&
+        isActuallyVisibleOnScreen &&
         scenePhase == .active &&
         !forcePauseMotion
     }
@@ -78,6 +80,7 @@ struct EffectCatalogRailCard: View {
         motionURLString != nil &&
         !autoplayEnabled &&
         isVisibleInHierarchy &&
+        isActuallyVisibleOnScreen &&
         scenePhase == .active &&
         !forcePauseMotion
     }
@@ -101,16 +104,45 @@ struct EffectCatalogRailCard: View {
         .contentShape(Rectangle())
         .onAppear {
             isVisibleInHierarchy = true
-            // Иначе родитель (`EffectsHomeView`) меняет `@State` в том же проходе layout, что и появление ячейки — SwiftUI предупреждает про undefined behavior.
-            DispatchQueue.main.async {
-                onVisibilityChanged?(true)
-            }
         }
         .onDisappear {
             isVisibleInHierarchy = false
+            isActuallyVisibleOnScreen = false
             DispatchQueue.main.async {
                 onVisibilityChanged?(false)
             }
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        updateActualVisibility(using: proxy.frame(in: .global))
+                    }
+                    .onChange(of: proxy.frame(in: .global)) { _, frame in
+                        updateActualVisibility(using: frame)
+                    }
+            }
+        }
+    }
+
+    /// В `LazyHStack` onAppear может приходить для предзагруженных карточек вне экрана.
+    /// Считаем карточку «видимой» только когда заметная часть реально попала в viewport.
+    private func updateActualVisibility(using globalFrame: CGRect) {
+        guard globalFrame.width > 1, globalFrame.height > 1 else { return }
+
+        let viewport = UIScreen.main.bounds
+        let intersection = globalFrame.intersection(viewport)
+        let visibleArea = max(0, intersection.width) * max(0, intersection.height)
+        let fullArea = globalFrame.width * globalFrame.height
+        guard fullArea > 0 else { return }
+
+        // Порог убирает дребезг на краях и частично видимых превью.
+        let isVisible = (visibleArea / fullArea) >= 0.35
+        guard isVisible != isActuallyVisibleOnScreen else { return }
+
+        isActuallyVisibleOnScreen = isVisible
+        DispatchQueue.main.async {
+            onVisibilityChanged?(isVisible)
         }
     }
 

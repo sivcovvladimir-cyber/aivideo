@@ -377,13 +377,14 @@ struct PromptGenerationView: View {
     private var promptActionsRow: some View {
         Group {
             if isTwoImageVideoScenario {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    ViewThatFits(in: .horizontal) {
-                        twoImageVideoChipsRow(fusionTagsCompact: false)
-                        twoImageVideoChipsRow(fusionTagsCompact: true)
-                    }
+                // На реальных устройствах строка чипов может не влезать по ширине:
+                // если форсировать fixedSize, левая часть визуально рисуется, но выходит за hit-test bounds и «не жмётся».
+                // Оставляем право на сжатие текста и держим ряд в пределах доступной ширины.
+                ViewThatFits(in: .horizontal) {
+                    twoImageVideoChipsRow(fusionTagsCompact: false)
+                    twoImageVideoChipsRow(fusionTagsCompact: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             } else if !hasReferencePhotos {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
@@ -407,8 +408,7 @@ struct PromptGenerationView: View {
                     title: transitionStyleChipTitle,
                     accessibilityLabel: "generation_video_transition_style_accessibility".localized,
                     accessibilityValue: transitionStyleChipTitle,
-                    action: cycleTransitionStyle,
-                    reservesFullWidth: true
+                    action: cycleTransitionStyle
                 )
             }
             if twoImageVideoMode == .fusion {
@@ -427,10 +427,10 @@ struct PromptGenerationView: View {
                 systemImage: systemImageName(for: twoImageVideoMode),
                 accessibilityLabel: "generation_video_two_image_mode_accessibility".localized,
                 accessibilityValue: localizedTitle(for: twoImageVideoMode),
-                action: cycleTwoImageVideoMode,
-                reservesFullWidth: true
+                action: cycleTwoImageVideoMode
             )
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var transitionStyleChipTitle: String {
@@ -463,17 +463,18 @@ struct PromptGenerationView: View {
                             : AppTheme.Typography.bodySecondary.weight(.semibold)
                     )
                     .lineLimit(1)
+                    .minimumScaleFactor(useCompactTitle ? 0.9 : 0.82)
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
             .padding(.horizontal, useCompactTitle ? 10 : 14)
             .padding(.vertical, useCompactTitle ? 8 : 10)
             .background(AppTheme.Colors.background.opacity(0.42), in: Capsule())
+            .contentShape(Capsule())
         }
         .appPlainButtonStyle()
         .accessibilityLabel(Text(accessibilityLabel))
         .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))
         .layoutPriority(reservesFullWidth ? 1 : 0)
-        .fixedSize(horizontal: reservesFullWidth, vertical: false)
     }
 
 /// Подставляет `accessibilityValue` только когда есть осмысленное значение (не пустая строка для VoiceOver).
