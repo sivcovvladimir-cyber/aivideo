@@ -13,6 +13,8 @@ public enum NetworkError: LocalizedError {
     case unauthorized
     case notFound
     case serverError(String?)
+    /// Ответ useapi/PixVerse с телом — для `generation_logs.response_metadata`.
+    case providerAPIFailure(statusCode: Int, message: String, responseBody: String?, requestURL: String?)
     case httpError(Int)
     case noData
     case generationTimeoutWithRequestId(String)
@@ -31,6 +33,8 @@ public enum NetworkError: LocalizedError {
         case .unauthorized: return "Unauthorized"
         case .notFound: return "Not found"
         case .serverError(let msg): return msg ?? "Server error"
+        case .providerAPIFailure(let code, let msg, _, _):
+            return "HTTP \(code): \(msg)"
         case .httpError(let code):
             switch code {
             case 429: return "Provider is rate limited. Please try again in a minute"

@@ -410,28 +410,15 @@ struct EffectsHomeView: View {
                     heroGradient
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // Как в макете: название эффекта по центру над pill-кнопкой «Try Now»; тап по карточке открывает деталь.
-                    VStack(spacing: 12) {
-                        Text(item.preset.title)
-                            .font(AppTheme.Typography.headline)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.45), radius: 10, x: 0, y: 2)
-
-                        Text("effects_hero_try_now".localized)
-                            .font(AppTheme.Typography.buttonSmall)
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 12)
-                            .background(.white, in: Capsule())
-
-                        if hero.items.count > 1 {
+                    // Точки карусели справа внизу; тап по карточке открывает деталь.
+                    if hero.items.count > 1 {
+                        HStack {
+                            Spacer(minLength: 0)
                             heroCarouselPageDots(count: hero.items.count, selectedIndex: heroCarouselIndex)
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 22)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 22)
                 }
                 .allowsHitTesting(false)
             }

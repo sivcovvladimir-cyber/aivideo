@@ -32,6 +32,7 @@
 		FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00132F10000100000013 /* TokenWalletService.swift */; };
 		FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00152F10000100000015 /* PixVerseAPIService.swift */; };
 		FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00172F10000100000017 /* GenerationJobService.swift */; };
+		FA6E00502F10000100000050 /* GenerationFailureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */; };
 		FA6E00182F10000100000018 /* GenerationProgressOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */; };
 		FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001B2F1000010000001B /* GenerationBillingService.swift */; };
 		FA6E001C2F1000010000001C /* EffectsSectionBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */; };
@@ -133,6 +134,7 @@
 		FA6E00132F10000100000013 /* TokenWalletService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenWalletService.swift; sourceTree = "<group>"; };
 		FA6E00152F10000100000015 /* PixVerseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixVerseAPIService.swift; sourceTree = "<group>"; };
 		FA6E00172F10000100000017 /* GenerationJobService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationJobService.swift; sourceTree = "<group>"; };
+		FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationFailureDiagnostics.swift; sourceTree = "<group>"; };
 		FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationProgressOverlayView.swift; sourceTree = "<group>"; };
 		FA6E001B2F1000010000001B /* GenerationBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationBillingService.swift; sourceTree = "<group>"; };
 		FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSectionBrowseView.swift; sourceTree = "<group>"; };
@@ -315,6 +317,7 @@
 				FA6E00082F10000100000008 /* GenerationCostCalculator.swift */,
 				FA6E001B2F1000010000001B /* GenerationBillingService.swift */,
 				FA6E00172F10000100000017 /* GenerationJobService.swift */,
+				FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */,
 				FAC32DED2E3E05CC00D84786 /* KeychainService.swift */,
 				FA6E00132F10000100000013 /* TokenWalletService.swift */,
 				FA95019A2E2EDEC0001E9F2E /* RateService.swift */,
@@ -874,6 +877,7 @@
 				FA6E000D2F1000010000000D /* PaywallPlacementTier.swift in Sources */,
 				FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */,
 				FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */,
+				FA6E00502F10000100000050 /* GenerationFailureDiagnostics.swift in Sources */,
 				FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */,
 				FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */,
 				FA4106272E2BA25700CCA9CF /* AdaptyService.swift in Sources */,
@@ -1028,7 +1032,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1080,7 +1084,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;

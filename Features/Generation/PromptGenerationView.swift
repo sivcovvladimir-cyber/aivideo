@@ -298,30 +298,71 @@ struct PromptGenerationView: View {
         )
     }
 
+    /// Внешняя панель «промпт + фото»: как в light — `cardBackground`; в dark чуть темнее обводка для контура на чёрном фоне.
+    private var generationMainPanelFill: Color {
+        switch themeManager.currentTheme {
+        case .dark:
+            return AppTheme.Colors.cardBackground
+        case .light:
+            return AppTheme.Colors.cardBackground.opacity(0.9)
+        }
+    }
+
+    private var generationMainPanelStroke: Color {
+        switch themeManager.currentTheme {
+        case .dark:
+            return Color.white.opacity(0.1)
+        case .light:
+            return Color.black.opacity(0.06)
+        }
+    }
+
+    /// Вложенное поле промпта: light — светлая «ямка» на панели; dark — чуть темнее панели (зеркально).
+    private var promptCardFill: Color {
+        switch themeManager.currentTheme {
+        case .dark:
+            return Color(red: 0.08, green: 0.09, blue: 0.11)
+        case .light:
+            return AppTheme.Colors.background.opacity(0.32)
+        }
+    }
+
+    /// Вторичные капсулы внутри панели (загрузка фото и т.п.) — в тон вложенному полю промпта.
+    private var generationPanelSecondaryFill: Color {
+        switch themeManager.currentTheme {
+        case .dark:
+            return Color(red: 0.08, green: 0.09, blue: 0.11)
+        case .light:
+            return AppTheme.Colors.background.opacity(0.52)
+        }
+    }
+
     private var generationMainCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let panelShape = RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
+        return VStack(alignment: .leading, spacing: 12) {
             promptCard
             inputPhotoSection
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-                .fill(AppTheme.Colors.cardBackground.opacity(0.9))
-        )
+        .background(panelShape.fill(generationMainPanelFill))
+        .overlay(panelShape.strokeBorder(generationMainPanelStroke, lineWidth: 1))
     }
 
     private var promptCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let cardShape = RoundedRectangle(cornerRadius: promptCardCornerRadius, style: .continuous)
+        return VStack(alignment: .leading, spacing: 14) {
             promptSection
             if showsPromptActionsRow {
                 promptActionsRow
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: promptCardCornerRadius, style: .continuous)
-                .fill(AppTheme.Colors.background.opacity(0.32))
-        )
+        .background(cardShape.fill(promptCardFill))
+        .overlay {
+            if themeManager.currentTheme == .dark {
+                cardShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+            }
+        }
     }
 
     private var showsPromptActionsRow: Bool {
@@ -338,11 +379,14 @@ struct PromptGenerationView: View {
                 promptClearButton
             }
 
+            // Фиксированная высота + clip: UITextView внутри TextEditor иначе раздувает hit-test зону вниз на чипы под полем.
             TextEditor(text: $prompt)
                 .font(AppTheme.Typography.body)
                 .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.92))
                 .scrollContentBackground(.hidden)
-                .frame(minHeight: 110)
+                .frame(height: 110)
+                .clipped()
+                .contentShape(Rectangle())
                 .padding(.horizontal, 2)
                 .overlay(alignment: .topLeading) {
                     if prompt.isEmpty {
@@ -355,6 +399,13 @@ struct PromptGenerationView: View {
                     }
                 }
 
+            if showsPromptActionsRow {
+                // Буфер между UITextView и нижними чипами: на реальных iOS его gesture area
+                // может цеплять тапы у нижней кромки, поэтому кнопки держим чуть дальше.
+                Color.clear
+                    .frame(height: 6)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -377,14 +428,8 @@ struct PromptGenerationView: View {
     private var promptActionsRow: some View {
         Group {
             if isTwoImageVideoScenario {
-                // На реальных устройствах строка чипов может не влезать по ширине:
-                // если форсировать fixedSize, левая часть визуально рисуется, но выходит за hit-test bounds и «не жмётся».
-                // Оставляем право на сжатие текста и держим ряд в пределах доступной ширины.
-                ViewThatFits(in: .horizontal) {
-                    twoImageVideoChipsRow(fusionTagsCompact: false)
-                    twoImageVideoChipsRow(fusionTagsCompact: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                twoImageVideoChipsRow
+                    .zIndex(1)
             } else if !hasReferencePhotos {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
@@ -401,7 +446,7 @@ struct PromptGenerationView: View {
         }
     }
 
-    private func twoImageVideoChipsRow(fusionTagsCompact: Bool) -> some View {
+    private var twoImageVideoChipsRow: some View {
         HStack(spacing: 8) {
             if twoImageVideoMode == .transition {
                 promptActionCapsule(
@@ -417,8 +462,7 @@ struct PromptGenerationView: View {
                         title: tag,
                         accessibilityLabel: tag,
                         accessibilityValue: nil,
-                        action: { insertFusionTag(tag) },
-                        useCompactTitle: fusionTagsCompact
+                        action: { insertFusionTag(tag) }
                     )
                 }
             }
@@ -446,35 +490,43 @@ struct PromptGenerationView: View {
         systemImage: String? = nil,
         accessibilityLabel: String,
         accessibilityValue: String?,
-        action: @escaping () -> Void,
-        useCompactTitle: Bool = false,
-        reservesFullWidth: Bool = false
+        action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            dismissPromptKeyboard()
+            action()
+        } label: {
             HStack(spacing: systemImage == nil ? 0 : 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: useCompactTitle ? 11 : 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 Text(title)
-                    .font(
-                        useCompactTitle
-                            ? AppTheme.Typography.caption.weight(.semibold)
-                            : AppTheme.Typography.bodySecondary.weight(.semibold)
-                    )
+                    .font(AppTheme.Typography.bodySecondary.weight(.semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(useCompactTitle ? 0.9 : 0.82)
+                    .minimumScaleFactor(0.82)
+                    // Без horizontal: false minimumScaleFactor не уменьшает ширину в layout — ряд вылезает за bounds.
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
-            .padding(.horizontal, useCompactTitle ? 10 : 14)
-            .padding(.vertical, useCompactTitle ? 8 : 10)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .background(AppTheme.Colors.background.opacity(0.42), in: Capsule())
-            .contentShape(Capsule())
         }
         .appPlainButtonStyle()
+        .contentShape(Capsule())
         .accessibilityLabel(Text(accessibilityLabel))
         .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))
-        .layoutPriority(reservesFullWidth ? 1 : 0)
+    }
+
+    private func dismissPromptKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
 /// Подставляет `accessibilityValue` только когда есть осмысленное значение (не пустая строка для VoiceOver).
@@ -750,7 +802,7 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
                     .padding(.vertical, 14)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(AppTheme.Colors.background.opacity(0.52))
+                            .fill(generationPanelSecondaryFill)
                     )
                 }
                 .disabled(isLoadingPhoto)
@@ -772,7 +824,7 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
             .frame(width: photoTileHeight, height: photoTileHeight)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.Colors.background.opacity(0.52))
+                    .fill(generationPanelSecondaryFill)
             )
         }
         .disabled(isLoadingPhoto)

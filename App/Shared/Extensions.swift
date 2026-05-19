@@ -184,15 +184,36 @@ extension UIImage {
         return nil
     }
 
-    /// Длинная сторона не больше `maxLongSide` — PixVerse и сохранение черновика без лишнего веса.
-    func downscaled(maxLongSide: CGFloat) -> UIImage {
-        let longestSide = max(size.width, size.height)
-        guard longestSide > maxLongSide else { return self }
+    var pixelWidth: Int {
+        Int((size.width * scale).rounded())
+    }
 
-        let scale = maxLongSide / longestSide
-        let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
-        // Важно фиксировать scale=1: иначе renderer может взять scale экрана (2x/3x),
-        // и фактические пиксели станут больше лимита API при том же targetSize в points.
+    var pixelHeight: Int {
+        Int((size.height * scale).rounded())
+    }
+
+    /// Длинная сторона в пикселях не больше `maxLongSide`; всегда отдаём `scale == 1` (иначе «400 incorrect width or height» на @3x).
+    func downscaled(maxLongSide: CGFloat) -> UIImage {
+        let pixelWidth = size.width * scale
+        let pixelHeight = size.height * scale
+        guard pixelWidth > 0, pixelHeight > 0 else { return self }
+
+        let longestPixel = max(pixelWidth, pixelHeight)
+        let targetLong = min(longestPixel, maxLongSide)
+        let ratio = targetLong / longestPixel
+        var targetW = max(2, floor(pixelWidth * ratio))
+        var targetH = max(2, floor(pixelHeight * ratio))
+        // Чётные размеры — частый implicit-лимит видео/кадровых API.
+        if Int(targetW) % 2 != 0 { targetW -= 1 }
+        if Int(targetH) % 2 != 0 { targetH -= 1 }
+        let targetSize = CGSize(width: targetW, height: targetH)
+
+        if scale == 1,
+           abs(pixelWidth - targetW) < 0.5,
+           abs(pixelHeight - targetH) < 0.5 {
+            return self
+        }
+
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false

@@ -190,8 +190,30 @@ struct PaywallView: View {
     @State private var showTrialPlans = true
     
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-    
-    private let bottomGradientHeight: CGFloat = 600
+
+    /// Сдвиг hero-видео/WebP вверх от верхнего края (кадр обрезается снизу, не трогаем layout тарифов).
+    private let paywallHeroVerticalLift: CGFloat = 75
+
+    private let paywallBottomScrimHeight: CGFloat = 500
+    /// Высота fade-слоя у верхнего края скрима (от hero к тёмному): 600→450 pt = opacity 0→1.
+    private let paywallBottomScrimFadeHeight: CGFloat = 200
+
+    /// Скрим 600 pt от низа экрана: 450→0 pt = полный фон; 600→450 pt = 0→1 за `paywallBottomScrimFadeHeight`.
+    private var paywallBottomScrim: some View {
+        let backdrop = PaywallShellChrome.canvasBackground
+        // location 0 = верх скрима (600 pt от низа), location 1 = низ экрана.
+        let fadeEndLocation = paywallBottomScrimFadeHeight / paywallBottomScrimHeight
+        return LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: backdrop.opacity(0), location: 0),
+                .init(color: backdrop, location: fadeEndLocation),
+                .init(color: backdrop, location: 1)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: paywallBottomScrimHeight)
+    }
 
     /// Картинка с `scaledToFill` и якорем к верху — как `onboardingHeroImage` в `OnboardingView`.
     @ViewBuilder
@@ -263,6 +285,7 @@ struct PaywallView: View {
                             Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .offset(y: -paywallHeroVerticalLift)
                         .ignoresSafeArea(edges: .top)
                     } else if let heroData = PaywallHeroTopMedia.webpData {
                         VStack(spacing: 0) {
@@ -285,6 +308,7 @@ struct PaywallView: View {
                             Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .offset(y: -paywallHeroVerticalLift)
                         .ignoresSafeArea(edges: .top)
                     }
 
@@ -326,21 +350,13 @@ struct PaywallView: View {
                     }
                     .zIndex(10) // Поверх hero, градиента и нижнего блока
 
-                    // Затемнение снизу: фиксированные стопы как для dark colorScheme (не ослабляем в light).
+                    // Затемнение снизу: как на онбординге — от зоны заголовка, без длинного «зелёного» fade на весь экран.
                     VStack {
                         Spacer()
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.black.opacity(0), location: 0),
-                                .init(color: Color.black.opacity(0.68), location: 0.72),
-                                .init(color: Color.black.opacity(0.96), location: 1)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: bottomGradientHeight)
+                        paywallBottomScrim
                     }
                     .ignoresSafeArea(edges: .bottom)
+                    .allowsHitTesting(false)
                     
                     // Нижний блок: прижат к физическому низу экрана; отступ снизу = home indicator + небольшой зазор (не «висячий» чёрный зазор как при UIKit windows.first).
                     VStack {
@@ -1176,6 +1192,11 @@ fileprivate enum PaywallPlanTileChrome {
     static let title = Color.white.opacity(0.85)
     static let secondary = Color.white.opacity(0.72)
     static let savingsPillBackground = Color.white.opacity(0.14)
+    /// Невыбранная плитка: темнее `paywallCardBackground`, ближе к холсту оверлея.
+    static let defaultTileBackground = PaywallShellChrome.canvasBackground
+    /// Выбранная плитка: база чуть светлее default + лёгкий оттенок `primary` поверх (не заливка).
+    static let selectedTileBaseBackground = AppTheme.Colors.paywallCardBackground.opacity(0.94)
+    static let selectedTilePrimaryTintOpacity: CGFloat = 0.10
 }
 
 /// Холст и мелкий текст пейвола целиком: как в dark, пока открыт оверлей (не тянем светлый `AppTheme` под градиенты).
@@ -1310,10 +1331,17 @@ fileprivate struct PricingPlanCard: View {
                 }
             }
             .padding(AppTheme.Spacing.medium)
-            // Та же тёмная подложка, что и в dark: не зависит от темы приложения (без «светлого» материала и лишнего контраста обводки).
+            // Подложка не зависит от темы приложения; невыбранная плитка темнее, выбранная — с лёгким оттенком primary.
             .background {
-                RoundedRectangle(cornerRadius: AppTheme.CornerRadius.large)
-                    .fill(AppTheme.Colors.paywallCardBackground.opacity(0.94))
+                let tileShape = RoundedRectangle(cornerRadius: AppTheme.CornerRadius.large, style: .continuous)
+                tileShape
+                    .fill(isSelected ? PaywallPlanTileChrome.selectedTileBaseBackground : PaywallPlanTileChrome.defaultTileBackground)
+                    .overlay {
+                        if isSelected {
+                            tileShape
+                                .fill(AppTheme.Colors.primary.opacity(PaywallPlanTileChrome.selectedTilePrimaryTintOpacity))
+                        }
+                    }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.CornerRadius.large)

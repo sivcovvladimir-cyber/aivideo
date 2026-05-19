@@ -107,8 +107,28 @@ struct PixVerseCreateJobOutcome {
     let requestRecord: PixVerseAPIRequestRecord
 }
 
+/// POST create уже собран и (обычно) отправлен — сохраняем `request_metadata` даже при 4xx/5xx и пустом `video_id`.
+enum PixVerseCreateJobError: Error {
+    case requestFailed(record: PixVerseAPIRequestRecord, underlying: Error)
+
+    var requestRecord: PixVerseAPIRequestRecord {
+        switch self {
+        case .requestFailed(let record, _): return record
+        }
+    }
+
+    var underlying: Error {
+        switch self {
+        case .requestFailed(_, let error): return error
+        }
+    }
+}
+
 final class PixVerseAPIService {
     static let shared = PixVerseAPIService()
+
+    /// Сразу перед POST create (тело готово) — чтобы журнал успел сохранить request JSON ещё до ответа провайдера.
+    var onCreateRequestWillSend: (@MainActor (PixVerseAPIRequestRecord) async -> Void)?
 
     private let baseURL = URL(string: "https://api.useapi.net/v2/pixverse")!
     private let defaultVideoModel = "pixverse-c1"
@@ -192,18 +212,12 @@ final class PixVerseAPIService {
             body["audio"] = audio
         }
 
-        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
-            throw NetworkError.invalidData
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            guard let videoId = response.videoId, !videoId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: videoId, kind: .video)
         }
-        let url = baseURL.appendingPathComponent(endpointPath)
-        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
-        if let videoId = response.videoId, !videoId.isEmpty {
-            return PixVerseCreateJobOutcome(
-                job: PixVerseCreatedJob(id: videoId, kind: .video),
-                requestRecord: requestRecord
-            )
-        }
-        throw NetworkError.invalidResponse
     }
 
     func createImage(_ payload: PixVerseCreateImageRequest) async throws -> PixVerseCreateJobOutcome {
@@ -232,19 +246,13 @@ final class PixVerseAPIService {
             body["image_path_2"] = second
         }
 
-        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
-            throw NetworkError.invalidData
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            let imageId = response.successIds?.first ?? response.imageId
+            guard let imageId, !imageId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: imageId, kind: .image)
         }
-        let url = baseURL.appendingPathComponent(endpointPath)
-        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
-        let imageId = response.successIds?.first ?? response.imageId
-        if let imageId, !imageId.isEmpty {
-            return PixVerseCreateJobOutcome(
-                job: PixVerseCreatedJob(id: imageId, kind: .image),
-                requestRecord: requestRecord
-            )
-        }
-        throw NetworkError.invalidResponse
     }
 
     func createVideoTransition(_ payload: PixVerseCreateTransitionVideoRequest) async throws -> PixVerseCreateJobOutcome {
@@ -272,18 +280,12 @@ final class PixVerseAPIService {
             body["audio"] = audio
         }
 
-        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
-            throw NetworkError.invalidData
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            guard let videoId = response.videoId, !videoId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: videoId, kind: .video)
         }
-        let url = baseURL.appendingPathComponent(endpointPath)
-        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
-        if let videoId = response.videoId, !videoId.isEmpty {
-            return PixVerseCreateJobOutcome(
-                job: PixVerseCreatedJob(id: videoId, kind: .video),
-                requestRecord: requestRecord
-            )
-        }
-        throw NetworkError.invalidResponse
     }
 
     func createVideoFusion(_ payload: PixVerseCreateFusionVideoRequest) async throws -> PixVerseCreateJobOutcome {
@@ -310,18 +312,12 @@ final class PixVerseAPIService {
             body["audio"] = audio
         }
 
-        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
-            throw NetworkError.invalidData
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            guard let videoId = response.videoId, !videoId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: videoId, kind: .video)
         }
-        let url = baseURL.appendingPathComponent(endpointPath)
-        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
-        if let videoId = response.videoId, !videoId.isEmpty {
-            return PixVerseCreateJobOutcome(
-                job: PixVerseCreatedJob(id: videoId, kind: .video),
-                requestRecord: requestRecord
-            )
-        }
-        throw NetworkError.invalidResponse
     }
 
     func createVideoFrames(_ payload: PixVerseCreateFramesVideoRequest) async throws -> PixVerseCreateJobOutcome {
@@ -346,18 +342,12 @@ final class PixVerseAPIService {
             body["audio"] = audio
         }
 
-        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
-            throw NetworkError.invalidData
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            guard let videoId = response.videoId, !videoId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: videoId, kind: .video)
         }
-        let url = baseURL.appendingPathComponent(endpointPath)
-        let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
-        if let videoId = response.videoId, !videoId.isEmpty {
-            return PixVerseCreateJobOutcome(
-                job: PixVerseCreatedJob(id: videoId, kind: .video),
-                requestRecord: requestRecord
-            )
-        }
-        throw NetworkError.invalidResponse
     }
 
     func pollUntilCompleted(job: PixVerseCreatedJob, maxAttempts: Int = 120, interval: UInt64 = 5_000_000_000) async throws -> PixVerseCompletedResult {
@@ -380,6 +370,34 @@ final class PixVerseAPIService {
 
     private var isConfigured: Bool {
         !apiToken.isEmpty && !apiToken.hasPrefix("YOUR_")
+    }
+
+    /// Собирает `request_metadata`, уведомляет журнал, затем POST create; при ошибке ответа не теряем JSON тела.
+    private func submitCreateJob(
+        endpointPath: String,
+        body: [String: Any],
+        parseJob: (PixVerseCreateResponse) throws -> PixVerseCreatedJob
+    ) async throws -> PixVerseCreateJobOutcome {
+        guard let requestRecord = PixVerseAPIRequestRecord(endpoint: endpointPath, body: body) else {
+            throw NetworkError.invalidData
+        }
+        if let onCreateRequestWillSend {
+            await onCreateRequestWillSend(requestRecord)
+        }
+        let url = baseURL.appendingPathComponent(endpointPath)
+        do {
+            let response = try await postJSON(url: url, body: body, decode: PixVerseCreateResponse.self)
+            do {
+                let job = try parseJob(response)
+                return PixVerseCreateJobOutcome(job: job, requestRecord: requestRecord)
+            } catch {
+                throw PixVerseCreateJobError.requestFailed(record: requestRecord, underlying: error)
+            }
+        } catch let error as PixVerseCreateJobError {
+            throw error
+        } catch {
+            throw PixVerseCreateJobError.requestFailed(record: requestRecord, underlying: error)
+        }
     }
 
     private func fetchStatus(job: PixVerseCreatedJob) async throws -> PixVerseCompletedResult? {
@@ -451,6 +469,8 @@ final class PixVerseAPIService {
             return true
         case NetworkError.httpError(let code):
             return code == 429 || (500...599).contains(code)
+        case NetworkError.providerAPIFailure(let code, _, _, _):
+            return code == 429 || (500...599).contains(code)
         default:
             return false
         }
@@ -468,20 +488,47 @@ final class PixVerseAPIService {
         guard (200...299).contains(http.statusCode) else {
             if http.statusCode == 401 { throw NetworkError.unauthorized }
             if http.statusCode == 404 { throw NetworkError.notFound }
+            let bodyText = String(decoding: data, as: UTF8.self)
+            let requestURL = request.url?.absoluteString
             let apiError = try? JSONDecoder().decode(PixVerseErrorResponse.self, from: data)
             if let message = apiError?.error, !message.isEmpty {
-                throw mapPixVerseError(statusCode: http.statusCode, message: message)
+                throw NetworkError.providerAPIFailure(
+                    statusCode: http.statusCode,
+                    message: message,
+                    responseBody: bodyText.isEmpty ? nil : bodyText,
+                    requestURL: requestURL
+                )
             }
             if http.statusCode == 412 {
-                throw NetworkError.serverError("Not enough credits or quota for this request.")
+                throw NetworkError.providerAPIFailure(
+                    statusCode: http.statusCode,
+                    message: "Not enough credits or quota for this request.",
+                    responseBody: bodyText.isEmpty ? nil : bodyText,
+                    requestURL: requestURL
+                )
             }
             if http.statusCode == 422 {
-                throw NetworkError.serverError("The generation request was rejected. Check the prompt, image, template, or aspect ratio.")
+                throw NetworkError.providerAPIFailure(
+                    statusCode: http.statusCode,
+                    message: "The generation request was rejected. Check the prompt, image, template, or aspect ratio.",
+                    responseBody: bodyText.isEmpty ? nil : bodyText,
+                    requestURL: requestURL
+                )
             }
             if http.statusCode == 596 {
-                throw NetworkError.httpError(http.statusCode)
+                throw NetworkError.providerAPIFailure(
+                    statusCode: http.statusCode,
+                    message: "HTTP \(http.statusCode)",
+                    responseBody: bodyText.isEmpty ? nil : bodyText,
+                    requestURL: requestURL
+                )
             }
-            throw NetworkError.httpError(http.statusCode)
+            throw NetworkError.providerAPIFailure(
+                statusCode: http.statusCode,
+                message: "HTTP \(http.statusCode)",
+                responseBody: bodyText.isEmpty ? nil : bodyText,
+                requestURL: requestURL
+            )
         }
 
         do {
@@ -491,18 +538,6 @@ final class PixVerseAPIService {
         }
     }
 
-    private func mapPixVerseError(statusCode: Int, message: String) -> NetworkError {
-        switch statusCode {
-        case 412:
-            return .serverError("Quota or credits error: \(message)")
-        case 422:
-            return .serverError("Request validation failed: \(message)")
-        case 596:
-            return .httpError(statusCode)
-        default:
-            return .serverError(message)
-        }
-    }
 }
 
 private struct PixVerseErrorResponse: Decodable {

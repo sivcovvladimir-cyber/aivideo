@@ -99,6 +99,8 @@ final class GenerationJobService: ObservableObject {
     private let api = PixVerseAPIService.shared
     private let billing = GenerationBillingService.shared
     private var activeTask: Task<Void, Never>?
+    /// Контекст текущего job для `generation_logs.response_metadata` при ошибках (upload/create/poll).
+    private var activeFailureDiagnostics = GenerationFailureDiagnostics()
     /// v5: у `promptPhoto` `aspectRatio` опционален (i2i без явного aspect — провайдер по умолчанию `auto`).
     /// v6: `LibraryGenerationJob.id` — монотонный `Int` (не UUID).
     /// v8: режим двух фото в `promptVideo`; v9: `providerRequestLog` для полного JSON в `request_metadata`.
@@ -199,9 +201,36 @@ final class GenerationJobService: ObservableObject {
 
     private func run(jobId: Int, request: GenerationJobRequest, cost: Int) async {
         var activeProviderJobId: String?
+        activeFailureDiagnostics = GenerationFailureDiagnostics()
+        defer { activeFailureDiagnostics = GenerationFailureDiagnostics() }
+
+        // Один активный job — хук на POST create пишет request JSON до разбора ответа.
+        // Статус оставляем `running`, чтобы не зависеть от возможного enum в RPC; стадию кладём в metadata.
+        api.onCreateRequestWillSend = { [weak self] record in
+            guard let self else { return }
+            self.updateJobRequestLog(jobId, requestLog: record)
+            var requestMetadata = record.supabaseRequestMetadata()
+            requestMetadata["submission_stage"] = "create_request_sent"
+            await Self.pushGenerationLog(
+                clientJobId: jobId,
+                request: request,
+                cost: cost,
+                status: "running",
+                providerJobId: nil,
+                requestMetadata: requestMetadata,
+                resultURL: nil,
+                errorMessage: nil,
+                startedAt: Date(),
+                completedAt: nil
+            )
+        }
+        defer { api.onCreateRequestWillSend = nil }
+
         do {
+            activeFailureDiagnostics.setPhase("create_job")
             let outcome = try await createJob(for: request)
             activeProviderJobId = outcome.job.id
+            activeFailureDiagnostics.setPhase("processing")
             phase = .processing
             updateJobProvider(jobId, providerJob: outcome.job, requestLog: outcome.requestRecord)
             updateJob(jobId, state: .processing)
@@ -217,7 +246,9 @@ final class GenerationJobService: ObservableObject {
                 startedAt: Date(),
                 completedAt: nil
             )
+            activeFailureDiagnostics.setPhase("polling")
             let result = try await api.pollUntilCompleted(job: outcome.job)
+            activeFailureDiagnostics.setPhase("saving")
             phase = .saving
             let media = try await downloadAndSave(result: result, prompt: request.promptForLibrary)
 
@@ -237,20 +268,30 @@ final class GenerationJobService: ObservableObject {
             AppState.shared.addGeneratedMedia(media)
             removeJob(jobId)
             finishSuccess(media: media)
-        } catch {
+        } catch let createError as PixVerseCreateJobError {
             billing.refund(cost: cost)
-            let failedRequestMetadata = recentJobs.first(where: { $0.id == jobId })?.providerRequestLog?.supabaseRequestMetadata()
-            await Self.pushGenerationLog(
+            await Self.logGenerationFailure(
                 clientJobId: jobId,
                 request: request,
                 cost: cost,
-                status: "failed",
+                providerJobId: activeProviderJobId,
+                requestMetadata: createError.requestRecord.supabaseRequestMetadata(),
+                error: createError.underlying,
+                diagnostics: activeFailureDiagnostics
+            )
+            removeJob(jobId)
+            finishFailure(createError.underlying)
+        } catch {
+            billing.refund(cost: cost)
+            let failedRequestMetadata = recentJobs.first(where: { $0.id == jobId })?.providerRequestLog?.supabaseRequestMetadata()
+            await Self.logGenerationFailure(
+                clientJobId: jobId,
+                request: request,
+                cost: cost,
                 providerJobId: activeProviderJobId,
                 requestMetadata: failedRequestMetadata,
-                resultURL: nil,
-                errorMessage: error.localizedDescription,
-                startedAt: nil,
-                completedAt: Date()
+                error: error,
+                diagnostics: activeFailureDiagnostics
             )
             // Галерея показывает только готовые медиа и активные джобы; карточки с ошибкой провайдера не храним — текст уже в баннере.
             removeJob(jobId)
@@ -309,17 +350,16 @@ final class GenerationJobService: ObservableObject {
             finishSuccess(media: media)
         } catch {
             billing.refund(cost: job.cost)
-            await Self.pushGenerationLog(
+            var diagnostics = GenerationFailureDiagnostics()
+            diagnostics.setPhase("resume_polling")
+            await Self.logGenerationFailure(
                 clientJobId: job.id,
                 request: job.request,
                 cost: job.cost,
-                status: "failed",
                 providerJobId: providerJob.id,
                 requestMetadata: requestMetadata,
-                resultURL: nil,
-                errorMessage: error.localizedDescription,
-                startedAt: nil,
-                completedAt: Date()
+                error: error,
+                diagnostics: diagnostics
             )
             removeJob(job.id)
             finishFailure(error)
@@ -332,8 +372,9 @@ final class GenerationJobService: ObservableObject {
         switch request {
         case .promptVideo(let prompt, let duration, let audioEnabled, let aspectRatio, let inputImagePath, let secondInputImagePath, let twoImageMode):
             phase = .queued
-            let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath)
-            let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath)
+            activeFailureDiagnostics.setPhase("uploading")
+            let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath, label: "video_image_1")
+            let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath, label: "video_image_2")
             // Когда пользователь добавляет 2 фото в режиме видео, роутим запрос на отдельные endpoint'ы:
             // transition (дефолт), fusion или frames — чтобы не отправлять `last_frame_path` в `videos/create`.
             if let first = uploadedFirst, let second = uploadedSecond {
@@ -381,8 +422,9 @@ final class GenerationJobService: ObservableObject {
 
         case .promptPhoto(let prompt, let aspectRatio, let inputImagePath, let secondInputImagePath):
             phase = .queued
-            let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath)
-            let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath)
+            activeFailureDiagnostics.setPhase("uploading")
+            let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath, label: "photo_image_1")
+            let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath, label: "photo_image_2")
             return try await api.createImage(PixVerseCreateImageRequest(
                 prompt: prompt,
                 imagePath: uploadedFirst,
@@ -393,7 +435,8 @@ final class GenerationJobService: ObservableObject {
 
         case .effect(let preset, let inputImagePath):
             phase = .uploading
-            let upload = try await uploadRequiredInputImage(inputImagePath)
+            activeFailureDiagnostics.setPhase("uploading")
+            let upload = try await uploadRequiredInputImage(inputImagePath, label: "effect_reference")
             phase = .queued
             return try await api.createVideo(PixVerseCreateVideoRequest(
                 prompt: preset.promptTemplate ?? preset.description ?? preset.title,
@@ -408,23 +451,54 @@ final class GenerationJobService: ObservableObject {
         }
     }
 
-    private func uploadInputImageIfNeeded(_ path: String?) async throws -> String? {
+    private func uploadInputImageIfNeeded(_ path: String?, label: String) async throws -> String? {
         guard let path else { return nil }
-        return try await uploadRequiredInputImage(path).path
+        return try await uploadRequiredInputImage(path, label: label).path
     }
 
-    private func uploadRequiredInputImage(_ path: String) async throws -> PixVerseUploadResult {
+    private func uploadRequiredInputImage(_ path: String, label: String) async throws -> PixVerseUploadResult {
         guard FileManager.default.fileExists(atPath: path) else { throw NetworkError.invalidData }
         let raw = try Data(contentsOf: URL(fileURLWithPath: path))
         // Любой вход (HEIC, крупный JPEG/PNG с диска) — один пайплайн: декод → ужимание под лимит upload → JPEG/PNG под API.
-        guard let ui = UIImage.decodedForAPIUpload(from: raw) else { throw NetworkError.invalidData }
-        guard let payload = ui.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
+        guard let decoded = UIImage.decodedForAPIUpload(from: raw) else { throw NetworkError.invalidData }
+        let afterPipeline = decoded.normalizedUprightPixelBuffer().downscaled(maxLongSide: 1080)
+        guard let payload = decoded.pixelDataForPixVerseUpload(jpegQuality: 0.9) else {
             throw NetworkError.invalidData
         }
         let data = payload.data
         let contentType = payload.contentType
         phase = .uploading
-        return try await api.uploadImage(data, contentType: contentType)
+        let result: PixVerseUploadResult
+        do {
+            result = try await api.uploadImage(data, contentType: contentType)
+        } catch {
+            activeFailureDiagnostics.recordUpload(
+                ImageUploadTrace.capture(
+                    label: label,
+                    localPath: path,
+                    raw: raw,
+                    decoded: decoded,
+                    afterPipeline: afterPipeline,
+                    uploadContentType: contentType,
+                    uploadData: data,
+                    uploadResult: nil
+                )
+            )
+            throw error
+        }
+        activeFailureDiagnostics.recordUpload(
+            ImageUploadTrace.capture(
+                label: label,
+                localPath: path,
+                raw: raw,
+                decoded: decoded,
+                afterPipeline: afterPipeline,
+                uploadContentType: contentType,
+                uploadData: data,
+                uploadResult: result
+            )
+        )
+        return result
     }
 
     private func downloadAndSave(result: PixVerseCompletedResult, prompt: String?) async throws -> GeneratedMedia {
@@ -479,10 +553,18 @@ final class GenerationJobService: ObservableObject {
         persistJobs()
     }
 
+    private func updateJobRequestLog(_ id: Int, requestLog: PixVerseAPIRequestRecord) {
+        guard let index = recentJobs.firstIndex(where: { $0.id == id }) else { return }
+        recentJobs[index].providerRequestLog = requestLog
+        persistJobs()
+    }
+
     private func updateJobProvider(_ id: Int, providerJob: PixVerseCreatedJob, requestLog: PixVerseAPIRequestRecord?) {
         guard let index = recentJobs.firstIndex(where: { $0.id == id }) else { return }
         recentJobs[index].providerJob = providerJob
-        recentJobs[index].providerRequestLog = requestLog
+        if let requestLog {
+            recentJobs[index].providerRequestLog = requestLog
+        }
         persistJobs()
     }
 
@@ -496,6 +578,36 @@ final class GenerationJobService: ObservableObject {
         UserDefaults.standard.set(data, forKey: persistedJobsKey)
     }
 
+    private static func logGenerationFailure(
+        clientJobId: Int,
+        request: GenerationJobRequest,
+        cost: Int,
+        providerJobId: String?,
+        requestMetadata: [String: Any]?,
+        error: Error,
+        diagnostics: GenerationFailureDiagnostics
+    ) async {
+        await pushGenerationLog(
+            clientJobId: clientJobId,
+            request: request,
+            cost: cost,
+            status: "failed",
+            providerJobId: providerJobId,
+            requestMetadata: requestMetadata,
+            responseMetadata: diagnostics.responseMetadata(
+                error: error,
+                clientJobId: clientJobId,
+                request: request,
+                providerJobId: providerJobId,
+                requestMetadata: requestMetadata
+            ),
+            resultURL: nil,
+            errorMessage: diagnostics.errorMessageSummary(for: error),
+            startedAt: nil,
+            completedAt: Date()
+        )
+    }
+
     /// Сторона Supabase не должна ломать пайплайн генерации: ошибки только в лог.
     private static func pushGenerationLog(
         clientJobId: Int,
@@ -504,6 +616,7 @@ final class GenerationJobService: ObservableObject {
         status: String,
         providerJobId: String?,
         requestMetadata: [String: Any]?,
+        responseMetadata: [String: Any]? = nil,
         resultURL: String?,
         errorMessage: String?,
         startedAt: Date?,
@@ -526,6 +639,7 @@ final class GenerationJobService: ObservableObject {
             audioEnabled: meta.audioEnabled,
             tokenCost: cost,
             requestMetadata: requestMetadata,
+            responseMetadata: responseMetadata,
             resultURL: resultURL,
             errorMessage: errorMessage,
             startedAt: startedAt,

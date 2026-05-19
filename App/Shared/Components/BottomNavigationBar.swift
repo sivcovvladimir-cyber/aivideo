@@ -108,7 +108,7 @@ struct BottomNavigationBar: View {
             HStack(spacing: 18) {
                 navigationTabView(
                     isActive: isEffectsActive,
-                    systemName: isEffectsActive ? "flame.fill" : "flame",
+                    systemName: "flame.fill",
                     title: "effects_tab".localized,
                     action: { appState.currentScreen = .effectsHome }
                 )
@@ -117,7 +117,7 @@ struct BottomNavigationBar: View {
 
                 navigationTabView(
                     isActive: isGalleryActive,
-                    systemName: isGalleryActive ? "photo.fill" : "photo",
+                    systemName: "photo.fill",
                     title: "library_tab".localized,
                     action: { appState.currentScreen = .gallery }
                 )
@@ -189,18 +189,18 @@ struct BottomNavigationBar: View {
         title: String,
         action: @escaping () -> Void
     ) -> some View {
-        // Dark: активный белый, неактивные белый 66%. Light: активный чёрный, неактивные — textSecondary.
+        // Иконка всегда fill; активность — только цвет: dark — белый / 66%, light — textPrimary / 66%.
         let tabForeground: Color = {
             switch currentTheme {
             case .dark:
-                return isActive ? AppTheme.Colors.primary : AppTheme.Colors.textPrimary.opacity(0.66)
+                return isActive ? Color.white : AppTheme.Colors.textPrimary.opacity(0.66)
             case .light:
-                return isActive ? AppTheme.Colors.primary : AppTheme.Colors.textPrimary.opacity(0.66)
+                return isActive ? AppTheme.Colors.textPrimary : AppTheme.Colors.textPrimary.opacity(0.66)
             }
         }()
         return VStack(spacing: 2) {
             Image(systemName: systemName)
-                .font(.system(size: 22, weight: isActive ? .semibold : .medium))
+                .font(.system(size: 22, weight: .medium))
                 .foregroundColor(tabForeground)
                 .frame(width: 26, height: 26)
 

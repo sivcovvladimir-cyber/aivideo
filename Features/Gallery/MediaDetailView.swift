@@ -1007,4 +1007,4 @@ struct MediaDetailView_Previews: PreviewProvider {
         MediaDetailView(allMedia: [sampleMedia], currentMedia: sampleMedia, hideActionButtons: false, onDismiss: {})
             .environmentObject(AppState())
     }
-} 
+}

@@ -306,17 +306,36 @@ struct PreviewMediaView<Placeholder: View>: View {
         return "unknown"
     }
 
-    /// Лоадер на плитках/detail нужен только в режиме активного motion: если видео ещё не готово, держим индикатор поверх постера/фона.
-    private var shouldShowLoadingOverlay: Bool {
-        (showsLoadingIndicator || suppressesPosterBecauseMotionIsCached || suppressesPosterBeforeMotionByPolicy) &&
-        shouldPlayMotion &&
-        motionURL != nil &&
-        !isMotionPlaybackReady
+    /// Есть что показать в слое постера (bundled или remote URL); пока jpeg качается, лоадер может быть в `CachedAsyncImage`.
+    private var hasPosterVisualSource: Bool {
+        image != nil || imageURL != nil
     }
 
-    /// Когда suppress включён именно из-за cached AV-motion, placeholder не нужен: оставляем только loader -> video.
+    /// Только mp4/webp без jpeg/bundled под низом.
+    private var isMotionOnlyPreview: Bool {
+        motionURL != nil && !hasPosterVisualSource
+    }
+
+    /// Холодная сеть для motion-only: тот же UX, что при тёплом кэше — скрываем пустой фон, показываем лоадер до `onPlaybackReady`.
+    private var usesMotionOnlyLoadingUX: Bool {
+        isMotionOnlyPreview && shouldPlayMotion && !isMotionPlaybackReady
+    }
+
+    /// Лоадер в режиме активного motion: поверх постера/фона, пока mp4/webp ещё не готовы.
+    private var shouldShowLoadingOverlay: Bool {
+        guard shouldPlayMotion, motionURL != nil, !isMotionPlaybackReady else { return false }
+        return showsLoadingIndicator
+            || suppressesPosterBecauseMotionIsCached
+            || suppressesPosterBeforeMotionByPolicy
+            || usesMotionOnlyLoadingUX
+    }
+
+    /// Когда suppress включён из-за cached motion или motion-only load, placeholder не нужен: только loader → video.
     private var shouldShowPlaceholderWhenPosterSuppressed: Bool {
-        !suppressesPosterBecauseMotionIsCached && !suppressesPosterBeforeMotionByPolicy && !shouldShowLoadingOverlay
+        !suppressesPosterBecauseMotionIsCached
+            && !suppressesPosterBeforeMotionByPolicy
+            && !usesMotionOnlyLoadingUX
+            && !shouldShowLoadingOverlay
     }
 
     /// Motion уже в локальном кэше (AV — `EffectPreviewVideoDiskCache`, WebP/GIF — `ImageDownloader`): скрываем постер до готовности слоя, как до замены WebP-проигрывателя.
@@ -351,7 +370,9 @@ struct PreviewMediaView<Placeholder: View>: View {
             return true
         }
 
-        return suppressesPosterBeforeMotionByPolicy || suppressesPosterBecauseMotionIsCached
+        return usesMotionOnlyLoadingUX
+            || suppressesPosterBeforeMotionByPolicy
+            || suppressesPosterBecauseMotionIsCached
     }
 
     private var shouldInstantiateMotionLayer: Bool {
