@@ -344,11 +344,16 @@ struct MediaVideoPlayer: View {
         min(1, max(0, playbackVolumeOverride ?? (isMuted ? 0 : 1)))
     }
 
-    /// Дополнительно прижимаем громкость на уровне `AVPlayerItem` (`AVAudioMix`) — так override стабильнее, чем только `player.volume`.
+    /// Дополнительно прижимаем громкость на уровне `AVPlayerItem` до создания `AVPlayerLooper`: looper копирует template item, поэтому поздний async-mix может не попасть в реальные loop items.
     private func applyItemAudioPolicy(to item: AVPlayerItem) {
-        guard let track = item.asset.tracks(withMediaType: .audio).first else { return }
-        let params = AVMutableAudioMixInputParameters(track: track)
-        params.setVolume(constrainedPlaybackVolume(), at: .zero)
+        let volume = constrainedPlaybackVolume()
+        guard volume > 0.0001 else {
+            item.audioMix = nil
+            return
+        }
+
+        let params = AVMutableAudioMixInputParameters(track: nil)
+        params.setVolume(volume, at: .zero)
         let mix = AVMutableAudioMix()
         mix.inputParameters = [params]
         item.audioMix = mix

@@ -75,14 +75,14 @@ struct PreviewMediaView<Placeholder: View>: View {
             let size = proxy.size
             let suppressPoster = shouldSuppressPosterUntilMotionReady
 
-            // Aspect-fill должен считаться от размера слота плитки/detail, а не от intrinsic-размера постера или WKWebView.
+            // Базовая плитка всегда остаётся нижним слоем: постер, motion и loader только накладываются поверх неё.
             ZStack {
+                placeholder()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+
                 if !suppressPoster {
                     poster
-                        .frame(width: size.width, height: size.height)
-                        .clipped()
-                } else if shouldShowPlaceholderWhenPosterSuppressed {
-                    placeholder()
                         .frame(width: size.width, height: size.height)
                         .clipped()
                 }
@@ -328,14 +328,6 @@ struct PreviewMediaView<Placeholder: View>: View {
             || suppressesPosterBecauseMotionIsCached
             || suppressesPosterBeforeMotionByPolicy
             || usesMotionOnlyLoadingUX
-    }
-
-    /// Когда suppress включён из-за cached motion или motion-only load, placeholder не нужен: только loader → video.
-    private var shouldShowPlaceholderWhenPosterSuppressed: Bool {
-        !suppressesPosterBecauseMotionIsCached
-            && !suppressesPosterBeforeMotionByPolicy
-            && !usesMotionOnlyLoadingUX
-            && !shouldShowLoadingOverlay
     }
 
     /// Motion уже в локальном кэше (AV — `EffectPreviewVideoDiskCache`, WebP/GIF — `ImageDownloader`): скрываем постер до готовности слоя, как до замены WebP-проигрывателя.

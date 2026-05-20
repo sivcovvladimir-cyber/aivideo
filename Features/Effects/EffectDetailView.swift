@@ -204,19 +204,9 @@ struct EffectDetailView: View {
                     debugContext: "detail id=\(preset.id) slug=\(preset.slug) title='\(preset.title)'",
                     posterNetworkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds
                 ) {
-                    if preset.previewImageURL != nil {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.contentCircularLoaderTint))
-                    } else {
-                        VStack(spacing: 10) {
-                            Image(systemName: "safari")
-                                .font(.system(size: 36, weight: .regular))
-                                .foregroundColor(AppTheme.Colors.textSecondary)
-                            Text("effect_detail_vertical_preview".localized)
-                                .font(AppTheme.Typography.caption)
-                                .foregroundColor(AppTheme.Colors.textSecondary)
-                        }
-                    }
+                    // На detail не показываем текстовый placeholder: базовая плитка уже подложена, а до motion нужен только loader.
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.contentCircularLoaderTint))
                 }
                 .frame(width: w, height: h)
             }

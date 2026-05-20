@@ -123,7 +123,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
         if let cachedImage = ImageDownloader.shared.getCachedImage(from: urlString) {
             if CachedAsyncImagePolicy.isRenderableCachedImage(cachedImage) {
-                log("runImageLoad HIT getCachedImage(from:) bytes~=\(cachedImage.pngData()?.count ?? -1)")
+                log("runImageLoad HIT getCachedImage(from:) size=\(Int(cachedImage.size.width * cachedImage.scale))x\(Int(cachedImage.size.height * cachedImage.scale))")
                 guard activeLoadKey == loadKey else { return }
                 image = cachedImage
                 imageSourceURLString = urlString

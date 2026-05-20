@@ -181,50 +181,61 @@ struct EffectsHomeView: View {
         let n = hero.items.count
         let useLooping = n > 1
 
-        return Group {
-            if useLooping {
-                let extended = [hero.items.last!] + hero.items + [hero.items.first!]
-                TabView(selection: $heroLoopPageIndex) {
-                    ForEach(Array(extended.enumerated()), id: \.offset) { offset, item in
-                        let realIndex = heroExtendedOffsetToRealIndex(offset, itemCount: n)
-                        heroSlide(hero: hero, item: item, index: realIndex)
-                            .tag(offset)
+        return ZStack(alignment: .bottomTrailing) {
+            Group {
+                if useLooping {
+                    let extended = [hero.items.last!] + hero.items + [hero.items.first!]
+                    TabView(selection: $heroLoopPageIndex) {
+                        ForEach(Array(extended.enumerated()), id: \.offset) { offset, item in
+                            let realIndex = heroExtendedOffsetToRealIndex(offset, itemCount: n)
+                            heroSlide(hero: hero, item: item, index: realIndex)
+                                .tag(offset)
+                        }
                     }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .transaction { txn in
-                    if heroCarouselIsJumping { txn.disablesAnimations = true }
-                }
-                .onChange(of: heroLoopPageIndex) { oldValue, newValue in
-                    // После «шва» кольца (дубликат первого → страница 1) тот же пресет: повторный сброс motion даёт рывок плеера/постера.
-                    let oldReal = heroExtendedOffsetToRealIndex(oldValue, itemCount: n)
-                    let newReal = heroExtendedOffsetToRealIndex(newValue, itemCount: n)
-                    if oldReal != newReal {
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .transaction { txn in
+                        if heroCarouselIsJumping { txn.disablesAnimations = true }
+                    }
+                    .onChange(of: heroLoopPageIndex) { oldValue, newValue in
+                        // После «шва» кольца (дубликат первого → страница 1) тот же пресет: повторный сброс motion даёт рывок плеера/постера.
+                        let oldReal = heroExtendedOffsetToRealIndex(oldValue, itemCount: n)
+                        let newReal = heroExtendedOffsetToRealIndex(newValue, itemCount: n)
+                        if oldReal != newReal {
+                            heroActiveMotionPlaybackReady = false
+                        }
+                        if heroCarouselSuppressNextUserInteractionMark {
+                            heroCarouselSuppressNextUserInteractionMark = false
+                        } else if !heroCarouselIsJumping {
+                            heroCarouselLastUserInteractionAt = Date()
+                        }
+                        commitHeroLoopPage(newValue, itemCount: n)
+                    }
+                } else {
+                    TabView(selection: $heroCarouselIndex) {
+                        ForEach(Array(hero.items.enumerated()), id: \.element.id) { index, item in
+                            heroSlide(hero: hero, item: item, index: index)
+                                .tag(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .onChange(of: heroCarouselIndex) { _, _ in
                         heroActiveMotionPlaybackReady = false
-                    }
-                    if heroCarouselSuppressNextUserInteractionMark {
-                        heroCarouselSuppressNextUserInteractionMark = false
-                    } else if !heroCarouselIsJumping {
-                        heroCarouselLastUserInteractionAt = Date()
-                    }
-                    commitHeroLoopPage(newValue, itemCount: n)
-                }
-            } else {
-                TabView(selection: $heroCarouselIndex) {
-                    ForEach(Array(hero.items.enumerated()), id: \.element.id) { index, item in
-                        heroSlide(hero: hero, item: item, index: index)
-                            .tag(index)
+                        if heroCarouselSuppressNextUserInteractionMark {
+                            heroCarouselSuppressNextUserInteractionMark = false
+                        } else {
+                            heroCarouselLastUserInteractionAt = Date()
+                        }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .onChange(of: heroCarouselIndex) { _, _ in
-                    heroActiveMotionPlaybackReady = false
-                    if heroCarouselSuppressNextUserInteractionMark {
-                        heroCarouselSuppressNextUserInteractionMark = false
-                    } else {
-                        heroCarouselLastUserInteractionAt = Date()
-                    }
-                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Точки вне TabView: при свайпе остаются на месте, листается только превью под ними.
+            if n > 1 {
+                heroCarouselPageDots(count: n, selectedIndex: heroCarouselIndex)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 22)
+                    .allowsHitTesting(false)
             }
         }
         .id(hero.sectionId)
@@ -406,21 +417,9 @@ struct EffectsHomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
 
-                ZStack(alignment: .bottom) {
-                    heroGradient
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    // Точки карусели справа внизу; тап по карточке открывает деталь.
-                    if hero.items.count > 1 {
-                        HStack {
-                            Spacer(minLength: 0)
-                            heroCarouselPageDots(count: hero.items.count, selectedIndex: heroCarouselIndex)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 22)
-                    }
-                }
-                .allowsHitTesting(false)
+                heroGradient
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))

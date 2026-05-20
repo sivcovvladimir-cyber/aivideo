@@ -268,24 +268,25 @@ struct PromptGenerationView: View {
                 Button {
                     mode = item
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: item == .video ? "video" : "camera")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(item.title)
-                            .font(AppTheme.Typography.bodySecondary.weight(.medium))
-                    }
-                    .foregroundColor(isSelected ? selectedSegmentForeground : AppTheme.Colors.textSecondary.opacity(0.88))
-                    .padding(.horizontal, 6)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .frame(height: generationControlPillHeight - 6)
-                    // Прозрачная зона сегмента тоже должна ловить тап — иначе срабатывает только по тексту/иконке.
-                    .contentShape(Capsule(style: .continuous))
-                    .background(
+                    ZStack {
                         Capsule(style: .continuous)
                             .fill(isSelected ? selectedSegmentFill : Color.clear)
-                    )
+                        HStack(spacing: 6) {
+                            Image(systemName: item == .video ? "video" : "camera")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(item.title)
+                                .font(AppTheme.Typography.bodySecondary.weight(.medium))
+                        }
+                        .foregroundColor(isSelected ? selectedSegmentForeground : AppTheme.Colors.textSecondary.opacity(0.88))
+                        .padding(.horizontal, 6)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: generationControlPillHeight - 6)
+                    // Прозрачная зона сегмента должна жить в label, иначе на iOS 17 тап ловится только по контенту.
+                    .contentShape(Rectangle())
                 }
                 .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
                 .appPlainButtonStyle()
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
@@ -302,7 +303,7 @@ struct PromptGenerationView: View {
     private var generationMainPanelFill: Color {
         switch themeManager.currentTheme {
         case .dark:
-            return AppTheme.Colors.cardBackground
+            return AppTheme.Colors.cardBackground.opacity(0.8)
         case .light:
             return AppTheme.Colors.cardBackground.opacity(0.9)
         }
@@ -311,9 +312,9 @@ struct PromptGenerationView: View {
     private var generationMainPanelStroke: Color {
         switch themeManager.currentTheme {
         case .dark:
-            return Color.white.opacity(0.1)
+            return Color.white.opacity(0.05)
         case .light:
-            return Color.black.opacity(0.06)
+            return Color.black.opacity(0.05)
         }
     }
 
@@ -360,7 +361,7 @@ struct PromptGenerationView: View {
         .background(cardShape.fill(promptCardFill))
         .overlay {
             if themeManager.currentTheme == .dark {
-                cardShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                cardShape.strokeBorder(Color.white.opacity(0.02), lineWidth: 1)
             }
         }
     }
@@ -462,6 +463,7 @@ struct PromptGenerationView: View {
                         title: tag,
                         accessibilityLabel: tag,
                         accessibilityValue: nil,
+                        isCompactTag: true,
                         action: { insertFusionTag(tag) }
                     )
                 }
@@ -490,6 +492,7 @@ struct PromptGenerationView: View {
         systemImage: String? = nil,
         accessibilityLabel: String,
         accessibilityValue: String?,
+        isCompactTag: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button {
@@ -502,20 +505,23 @@ struct PromptGenerationView: View {
                         .font(.system(size: 12, weight: .semibold))
                 }
                 Text(title)
-                    .font(AppTheme.Typography.bodySecondary.weight(.semibold))
+                    .font(isCompactTag ? AppTheme.Typography.caption.weight(.semibold) : AppTheme.Typography.bodySecondary.weight(.semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    // Без horizontal: false minimumScaleFactor не уменьшает ширину в layout — ряд вылезает за bounds.
-                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: true, vertical: true)
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, isCompactTag ? 10 : 14)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
-            .background(AppTheme.Colors.background.opacity(0.42), in: Capsule())
+            .background(AppTheme.Colors.background.opacity(0.42), in: Capsule(style: .continuous))
+            // Rectangle: hit-зона совпадает с полным bounding-rect чипа, а не с обрезанной капсулой —
+            // иначе на iOS 17 закруглённые концы не тапаются (визуально чип есть, тап не ловится).
+            .contentShape(Rectangle())
+            .fixedSize(horizontal: true, vertical: false)
         }
         .appPlainButtonStyle()
-        .contentShape(Capsule())
+        .contentShape(Rectangle())
+        .layoutPriority(isCompactTag ? 0 : 1)
         .accessibilityLabel(Text(accessibilityLabel))
         .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))
     }

@@ -200,7 +200,8 @@ struct PaywallView: View {
 
     /// Скрим 600 pt от низа экрана: 450→0 pt = полный фон; 600→450 pt = 0→1 за `paywallBottomScrimFadeHeight`.
     private var paywallBottomScrim: some View {
-        let backdrop = PaywallShellChrome.canvasBackground
+        // Основной фон приложения в dark (pure black), не устаревший PaywallShellChrome blue-gray.
+        let backdrop = Color.black
         // location 0 = верх скрима (600 pt от низа), location 1 = низ экрана.
         let fadeEndLocation = paywallBottomScrimFadeHeight / paywallBottomScrimHeight
         return LinearGradient(

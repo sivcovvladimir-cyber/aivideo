@@ -104,11 +104,15 @@ struct LoopingVideoPlayer: View {
         }
     }
 
-    /// Дублируем ограничение громкости на уровне `AVPlayerItem.audioMix`: в некоторых конфигурациях `VideoPlayer` + `AVQueuePlayer` это заметно стабильнее, чем только `player.volume`.
+    /// Дублируем ограничение громкости на уровне `AVPlayerItem.audioMix` до создания `AVPlayerLooper`, без синхронного чтения tracks.
     private func applyItemVolumeMix(_ item: AVPlayerItem, volume rawVolume: Float) {
-        guard let track = item.asset.tracks(withMediaType: .audio).first else { return }
         let v = min(1, max(0, rawVolume))
-        let params = AVMutableAudioMixInputParameters(track: track)
+        guard v > 0.0001 else {
+            item.audioMix = nil
+            return
+        }
+
+        let params = AVMutableAudioMixInputParameters(track: nil)
         params.setVolume(v, at: .zero)
         let mix = AVMutableAudioMix()
         mix.inputParameters = [params]
