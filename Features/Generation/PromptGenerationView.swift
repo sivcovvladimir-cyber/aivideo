@@ -252,16 +252,18 @@ struct PromptGenerationView: View {
             .padding(.vertical, 3)
             .background(
                 Capsule(style: .continuous)
-                    .fill(AppTheme.Colors.cardBackground.opacity(0.92))
+                    .fill(AppTheme.Colors.background.opacity(0.38))
             )
     }
 
     private var modePicker: some View {
-        let isDark = themeManager.currentTheme == .dark
-        // Светлая тема: «таб» почти белый — подпись должна быть тёмной, иначе как сейчас (белое на белом).
-        let selectedSegmentForeground: Color = isDark ? .white : AppTheme.Colors.textPrimary
-        let selectedSegmentFill: Color = isDark ? Color.white.opacity(0.16) : Color.white
+        // Активный таб — тот же фон, что у пилл настроек (9:16, длительность, Audio).
+        let selectedSegmentForeground = AppTheme.Colors.textPrimary
+        let selectedSegmentFill = AppTheme.Colors.cardBackground
 
+        // На iOS 17 двойные `.frame(maxWidth: .infinity)` и `.contentShape(Rectangle())` (внутри label И снаружи Button)
+        // в связке с кастомным buttonStyle иногда роняют hit-area сегмента в ноль. Поэтому контракт строго один:
+        // размер и contentShape живут ТОЛЬКО на label, снаружи Button — только buttonStyle и accessibility.
         return HStack(spacing: 4) {
             ForEach(GenerationMode.allCases) { item in
                 let isSelected = mode == item
@@ -280,14 +282,11 @@ struct PromptGenerationView: View {
                         .foregroundColor(isSelected ? selectedSegmentForeground : AppTheme.Colors.textSecondary.opacity(0.88))
                         .padding(.horizontal, 6)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: generationControlPillHeight - 6)
-                    // Прозрачная зона сегмента должна жить в label, иначе на iOS 17 тап ловится только по контенту.
+                    .frame(maxWidth: .infinity, minHeight: generationControlPillHeight - 6)
+                    // Rectangle, а не Capsule: тогда углы сегмента (внутри округлой пилюли) тоже ловят тап.
                     .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .appPlainButtonStyle()
+                .buttonStyle(ThemedPlainButtonStyle())
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
@@ -380,33 +379,28 @@ struct PromptGenerationView: View {
                 promptClearButton
             }
 
-            // Фиксированная высота + clip: UITextView внутри TextEditor иначе раздувает hit-test зону вниз на чипы под полем.
-            TextEditor(text: $prompt)
+            // Многострочный TextField (axis: .vertical) вместо TextEditor:
+            // 1) под капотом UITextField, а не UITextView — нет «бликовой» hit-test зоны, которая на iOS 17
+            //    вылезает за визуальный фрейм вниз и крадёт тапы по чипам прямо под полем;
+            // 2) auto-grow: поле само растёт под содержимое до `lineLimit` верхней границы, поэтому
+            //    исчезает внутренний скролл и большой пустой запас под карточкой.
+            TextField("", text: $prompt, axis: .vertical)
                 .font(AppTheme.Typography.body)
                 .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.92))
-                .scrollContentBackground(.hidden)
-                .frame(height: 110)
-                .clipped()
-                .contentShape(Rectangle())
-                .padding(.horizontal, 2)
+                .tint(AppTheme.Colors.primary)
+                .lineLimit(4...)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
                 .overlay(alignment: .topLeading) {
                     if prompt.isEmpty {
                         Text(promptPlaceholderKey.localized)
                             .font(AppTheme.Typography.body)
                             .foregroundColor(AppTheme.Colors.textPrimary.opacity(0.44))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 6)
                             .allowsHitTesting(false)
                     }
                 }
-
-            if showsPromptActionsRow {
-                // Буфер между UITextView и нижними чипами: на реальных iOS его gesture area
-                // может цеплять тапы у нижней кромки, поэтому кнопки держим чуть дальше.
-                Color.clear
-                    .frame(height: 6)
-                    .allowsHitTesting(false)
-            }
         }
     }
 
@@ -487,6 +481,9 @@ struct PromptGenerationView: View {
     }
 
     /// Чип в стиле «Удиви меня»: капсула в нижней строке промпт-карточки.
+    /// Контракт hit-area: размер, `contentShape` и `fixedSize` живут ТОЛЬКО на label.
+    /// Снаружи Button — только buttonStyle/accessibility, иначе на iOS 17 связка кастомного buttonStyle
+    /// с двойным `.contentShape` иногда роняет hit-зону до центральной точки чипа.
     private func promptActionCapsule(
         title: String,
         systemImage: String? = nil,
@@ -510,17 +507,15 @@ struct PromptGenerationView: View {
                     .fixedSize(horizontal: true, vertical: true)
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
-            .padding(.horizontal, isCompactTag ? 10 : 14)
+            .padding(.horizontal, isCompactTag ? 12 : 14)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .background(AppTheme.Colors.background.opacity(0.42), in: Capsule(style: .continuous))
-            // Rectangle: hit-зона совпадает с полным bounding-rect чипа, а не с обрезанной капсулой —
-            // иначе на iOS 17 закруглённые концы не тапаются (визуально чип есть, тап не ловится).
+            // Rectangle: углы Capsule тоже ловят тап (иначе скруглённые концы визуально есть, но не нажимаются).
             .contentShape(Rectangle())
             .fixedSize(horizontal: true, vertical: false)
         }
-        .appPlainButtonStyle()
-        .contentShape(Rectangle())
+        .buttonStyle(ThemedPlainButtonStyle())
         .layoutPriority(isCompactTag ? 0 : 1)
         .accessibilityLabel(Text(accessibilityLabel))
         .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))

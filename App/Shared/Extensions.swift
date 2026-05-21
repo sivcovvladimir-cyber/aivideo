@@ -259,4 +259,20 @@ extension String {
         }
         return hash.map { String(format: "%02x", $0) }.joined()
     }
-} 
+}
+
+// MARK: - Haptics
+
+/// Лёгкий impact: таб-бар, свайп каруселей, переход в настройки.
+enum LightImpactHaptics {
+    private static let generator: UIImpactFeedbackGenerator = {
+        let g = UIImpactFeedbackGenerator(style: .light)
+        g.prepare()
+        return g
+    }()
+
+    static func play() {
+        generator.impactOccurred()
+        generator.prepare()
+    }
+}

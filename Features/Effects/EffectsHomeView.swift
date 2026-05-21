@@ -114,6 +114,7 @@ struct EffectsHomeView: View {
     private var topBarActions: some View {
         HStack(spacing: 12) {
             Button {
+                LightImpactHaptics.play()
                 appState.currentScreen = .settings
             } label: {
                 Image(systemName: "gearshape.fill")
@@ -203,10 +204,14 @@ struct EffectsHomeView: View {
                         if oldReal != newReal {
                             heroActiveMotionPlaybackReady = false
                         }
+                        let suppressHaptic = heroCarouselSuppressNextUserInteractionMark
                         if heroCarouselSuppressNextUserInteractionMark {
                             heroCarouselSuppressNextUserInteractionMark = false
                         } else if !heroCarouselIsJumping {
                             heroCarouselLastUserInteractionAt = Date()
+                        }
+                        if oldReal != newReal, !heroCarouselIsJumping, !suppressHaptic {
+                            LightImpactHaptics.play()
                         }
                         commitHeroLoopPage(newValue, itemCount: n)
                     }
