@@ -20,6 +20,12 @@ struct EffectCatalogRailCard: View {
 
     @State private var isVisibleInHierarchy = true
     @State private var isActuallyVisibleOnScreen = false
+    /// Порог geometry (≥35% площади в viewport): отдельно от `isActuallyVisibleOnScreen`, чтобы при медленном скролле не перезапускать 150 мс на каждом кадре `onChange(frame)`.
+    @State private var geometryReportsVisible = false
+    /// Задержка 150 мс после входа в viewport только для AV motion (mp4/mov); WebP/GIF — без паузы.
+    @State private var pendingVisibleTask: Task<Void, Never>?
+
+    private static let avMotionAutoplayDebounceNs: UInt64 = 150_000_000
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -63,6 +69,12 @@ struct EffectCatalogRailCard: View {
         allowsMotionPreview && motionURLString != nil
     }
 
+    /// WebP/GIF через SDWebImage: лёгче AVPlayer — дебаунс 150 мс на вход в viewport не нужен.
+    private var isRasterMotionPreview: Bool {
+        guard let motionURLString else { return false }
+        return MediaVideoPlayer.isRasterMotionAssetURLString(motionURLString)
+    }
+
     private var runVideo: Bool {
         allowsMotionPreview &&
         motionURLString != nil &&
@@ -73,17 +85,8 @@ struct EffectCatalogRailCard: View {
         !forcePauseMotion
     }
 
-    /// Если autoplay для карточки выключен лимитом, всё равно прогреваем motion-слой в paused режиме:
-    /// это убирает «рывок» при последующем включении воспроизведения.
-    private var preloadVideoWhenPaused: Bool {
-        allowsMotionPreview &&
-        motionURLString != nil &&
-        !autoplayEnabled &&
-        isVisibleInHierarchy &&
-        isActuallyVisibleOnScreen &&
-        scenePhase == .active &&
-        !forcePauseMotion
-    }
+    /// Каталог: не поднимаем paused-плеер для видимых, но не-autoplay плиток. Это даёт самый большой выигрыш по числу одновременных AVPlayer при вертикальном скролле; «рывок» при последующем старте сглажен постером из первого кадра видео.
+    private var preloadVideoWhenPaused: Bool { false }
 
     private var debugContext: String {
         let screen: String
@@ -106,9 +109,12 @@ struct EffectCatalogRailCard: View {
             isVisibleInHierarchy = true
         }
         .onDisappear {
-            isVisibleInHierarchy = false
-            isActuallyVisibleOnScreen = false
+            pendingVisibleTask?.cancel()
+            pendingVisibleTask = nil
             DispatchQueue.main.async {
+                isVisibleInHierarchy = false
+                geometryReportsVisible = false
+                isActuallyVisibleOnScreen = false
                 onVisibilityChanged?(false)
             }
         }
@@ -127,6 +133,8 @@ struct EffectCatalogRailCard: View {
 
     /// В `LazyHStack` onAppear может приходить для предзагруженных карточек вне экрана.
     /// Считаем карточку «видимой» только когда заметная часть реально попала в viewport.
+    /// Вход в viewport: один таймер 150 мс (и при медленном скролле — не сбрасываем его на каждом кадре движения).
+    /// Быстрый скролл: плитка успевает уйти до конца 150 мс — AVPlayer не поднимаем. Выход — сразу.
     private func updateActualVisibility(using globalFrame: CGRect) {
         guard globalFrame.width > 1, globalFrame.height > 1 else { return }
 
@@ -137,12 +145,39 @@ struct EffectCatalogRailCard: View {
         guard fullArea > 0 else { return }
 
         // Порог убирает дребезг на краях и частично видимых превью.
-        let isVisible = (visibleArea / fullArea) >= 0.35
-        guard isVisible != isActuallyVisibleOnScreen else { return }
+        let crossesVisibleThreshold = (visibleArea / fullArea) >= 0.35
+        guard crossesVisibleThreshold != geometryReportsVisible else { return }
 
-        isActuallyVisibleOnScreen = isVisible
-        DispatchQueue.main.async {
-            onVisibilityChanged?(isVisible)
+        // `GeometryReader.onChange` приходит в ходе layout-pass; меняем @State отложенно, чтобы
+        // не ловить "Publishing changes from within view updates is not allowed".
+        if crossesVisibleThreshold {
+            DispatchQueue.main.async {
+                guard !geometryReportsVisible else { return }
+                geometryReportsVisible = true
+                guard !isActuallyVisibleOnScreen, pendingVisibleTask == nil else { return }
+                if isRasterMotionPreview {
+                    isActuallyVisibleOnScreen = true
+                    onVisibilityChanged?(true)
+                } else {
+                    let task = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: Self.avMotionAutoplayDebounceNs)
+                        guard !Task.isCancelled, geometryReportsVisible, !isActuallyVisibleOnScreen else { return }
+                        pendingVisibleTask = nil
+                        isActuallyVisibleOnScreen = true
+                        onVisibilityChanged?(true)
+                    }
+                    pendingVisibleTask = task
+                }
+            }
+        } else {
+            pendingVisibleTask?.cancel()
+            pendingVisibleTask = nil
+            DispatchQueue.main.async {
+                guard geometryReportsVisible || isActuallyVisibleOnScreen else { return }
+                geometryReportsVisible = false
+                isActuallyVisibleOnScreen = false
+                onVisibilityChanged?(false)
+            }
         }
     }
 

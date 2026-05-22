@@ -85,7 +85,8 @@ struct EffectsHomeView: View {
                 )
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
+                    // LazyVStack: рельсы вне viewport не материализуют свои карточки и не считают `GeometryReader`-фреймы при вертикальном скролле — это снимает «волну» обновлений видимости с десятка плееров за кадр.
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         content
                     }
                     // Без интерполяции: снятие .redacted и смена скелетон→контент иначе даёт «дрожащий» layout на первом кадре.
@@ -204,14 +205,10 @@ struct EffectsHomeView: View {
                         if oldReal != newReal {
                             heroActiveMotionPlaybackReady = false
                         }
-                        let suppressHaptic = heroCarouselSuppressNextUserInteractionMark
                         if heroCarouselSuppressNextUserInteractionMark {
                             heroCarouselSuppressNextUserInteractionMark = false
                         } else if !heroCarouselIsJumping {
                             heroCarouselLastUserInteractionAt = Date()
-                        }
-                        if oldReal != newReal, !heroCarouselIsJumping, !suppressHaptic {
-                            LightImpactHaptics.play()
                         }
                         commitHeroLoopPage(newValue, itemCount: n)
                     }

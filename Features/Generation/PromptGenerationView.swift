@@ -424,7 +424,6 @@ struct PromptGenerationView: View {
         Group {
             if isTwoImageVideoScenario {
                 twoImageVideoChipsRow
-                    .zIndex(1)
             } else if !hasReferencePhotos {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
@@ -441,8 +440,10 @@ struct PromptGenerationView: View {
         }
     }
 
+    
     private var twoImageVideoChipsRow: some View {
         HStack(spacing: 8) {
+            Spacer(minLength: 0)
             if twoImageVideoMode == .transition {
                 promptActionCapsule(
                     title: transitionStyleChipTitle,
@@ -470,7 +471,6 @@ struct PromptGenerationView: View {
                 action: cycleTwoImageVideoMode
             )
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var transitionStyleChipTitle: String {

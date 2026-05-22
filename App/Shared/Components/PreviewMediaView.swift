@@ -1,5 +1,71 @@
+import AVFoundation
 import SwiftUI
 import UIKit
+
+/// Fallback-постер для motion-only эффектов: один раз снимаем первый кадр AV-видео, кладём JPEG в Caches и дальше показываем как preview image.
+enum EffectMotionPosterCache {
+    private static let memory = NSCache<NSString, UIImage>()
+    private static let directoryName = "EffectMotionPosters"
+
+    static func image(for motionURL: String) -> UIImage? {
+        let key = cacheKey(for: motionURL)
+        if let cached = memory.object(forKey: key as NSString) {
+            return cached
+        }
+        let fileURL = cacheFileURL(forKey: key)
+        guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
+        memory.setObject(image, forKey: key as NSString)
+        return image
+    }
+
+    static func generateAndStorePoster(for motionURL: String, localVideoURL: URL) async -> UIImage? {
+        let key = cacheKey(for: motionURL)
+        if let cached = image(for: motionURL) {
+            return cached
+        }
+
+        let asset = AVURLAsset(url: localVideoURL)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 720, height: 720)
+
+        do {
+            let cgImage = try generator.copyCGImage(at: CMTime(seconds: 0.05, preferredTimescale: 600), actualTime: nil)
+            let image = UIImage(cgImage: cgImage)
+            memory.setObject(image, forKey: key as NSString)
+            if let data = image.jpegData(compressionQuality: 0.82) {
+                try? data.write(to: cacheFileURL(forKey: key), options: [.atomic])
+            }
+            return image
+        } catch {
+            return nil
+        }
+    }
+
+    static func clearAll() {
+        memory.removeAllObjects()
+        try? FileManager.default.removeItem(at: cacheDirectory)
+    }
+
+    static func estimatedDiskUsageBytes() -> Int64 {
+        ImageDownloader.totalRegularFileBytes(in: cacheDirectory)
+    }
+
+    private static func cacheKey(for motionURL: String) -> String {
+        motionURL.sha512()
+    }
+
+    private static var cacheDirectory: URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent(directoryName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        return dir
+    }
+
+    private static func cacheFileURL(forKey key: String) -> URL {
+        cacheDirectory.appendingPathComponent("\(key).jpg", isDirectory: false)
+    }
+}
 
 // Общий медиа-слой для превью-плиток: постер может быть remote URL или уже загруженным UIImage, motion-слой поверх — локальное/remote видео или WebP.
 struct PreviewMediaView<Placeholder: View>: View {
@@ -33,6 +99,8 @@ struct PreviewMediaView<Placeholder: View>: View {
     @State private var upgradedRemotePoster: UIImage?
     /// Инвалидирует in-flight `downloadImage`, если сменился URL постера или сбросили кэш картинок.
     @State private var remotePosterLoadGeneration: Int = 0
+    /// Сгенерированный первый кадр motion-видео, когда обычного постера нет.
+    @State private var generatedMotionPoster: UIImage?
 
     init(
         imageURL: URL? = nil,
@@ -80,11 +148,13 @@ struct PreviewMediaView<Placeholder: View>: View {
                 placeholder()
                     .frame(width: size.width, height: size.height)
                     .clipped()
+                    .zIndex(0)
 
                 if !suppressPoster {
                     poster
                         .frame(width: size.width, height: size.height)
                         .clipped()
+                        .zIndex(2)
                 }
 
                 // Для detail-карусели можем заранее поднять player на соседней странице (paused),
@@ -114,6 +184,7 @@ struct PreviewMediaView<Placeholder: View>: View {
                     .frame(width: size.width, height: size.height)
                     .clipped()
                     .allowsHitTesting(false)
+                    .zIndex(3)
                 }
 
                 if shouldShowLoadingOverlay {
@@ -121,6 +192,8 @@ struct PreviewMediaView<Placeholder: View>: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.contentCircularLoaderTint))
                         // Лоадер поверх карточки: тапы должны проходить к Button-обёртке, а не застревать здесь.
                         .allowsHitTesting(false)
+                        // Loader ниже poster/motion: если кадр или видео уже видны, спиннер не перекрывает их даже при лаге state.
+                        .zIndex(1)
                 }
             }
             .frame(width: size.width, height: size.height)
@@ -136,6 +209,7 @@ struct PreviewMediaView<Placeholder: View>: View {
         .onAppear {
             resetMotionReadinessIfNeeded()
             refreshMotionCacheState()
+            restoreCachedMotionPosterIfNeeded()
             logDisplayedMediaIfNeeded(reason: "appear")
         }
         .onChange(of: shouldPlayMotion) { _, _ in
@@ -144,8 +218,10 @@ struct PreviewMediaView<Placeholder: View>: View {
             logDisplayedMediaIfNeeded(reason: "play-change")
         }
         .onChange(of: motionURL) { _, _ in
+            generatedMotionPoster = nil
             resetMotionReadinessIfNeeded()
             refreshMotionCacheState()
+            restoreCachedMotionPosterIfNeeded()
             logDisplayedMediaIfNeeded(reason: "motion-change")
         }
         .onChange(of: imageURL?.absoluteString) { _, _ in
@@ -156,7 +232,12 @@ struct PreviewMediaView<Placeholder: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: .imageCacheCleared)) { _ in
             upgradedRemotePoster = nil
             remotePosterLoadGeneration += 1
+            generatedMotionPoster = nil
+            EffectMotionPosterCache.clearAll()
             logDisplayedMediaIfNeeded(reason: "image-cache-cleared")
+        }
+        .task(id: motionPosterTaskID) {
+            await generateMotionPosterIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .effectPreviewVideoCacheUpdated)) { note in
             guard motionURL != nil else { return }
@@ -167,6 +248,9 @@ struct PreviewMediaView<Placeholder: View>: View {
                updatedURL == motionURL {
                 if let tag = debugLogTag {
                     // print("\(tag) PreviewMediaView cache-updated context=\(debugContext ?? "?") isMotionPlaybackReady=\(isMotionPlaybackReady) suppressPoster=\(shouldSuppressPosterUntilMotionReady) showLoader=\(shouldShowLoadingOverlay)")
+                }
+                Task {
+                    await generateMotionPosterIfNeeded()
                 }
                 logDisplayedMediaIfNeeded(reason: "cache-updated")
             }
@@ -207,9 +291,68 @@ struct PreviewMediaView<Placeholder: View>: View {
             } placeholder: {
                 placeholder()
             }
+        } else if let generatedMotionPoster {
+            Image(uiImage: generatedMotionPoster)
+                .resizable()
+                .scaledToFill()
         } else {
             placeholder()
         }
+    }
+
+    private var motionPosterTaskID: String {
+        guard shouldGenerateMotionPoster,
+              let motionURL else {
+            return "none"
+        }
+        return motionURL
+    }
+
+    /// Постер из первого кадра нужен только для AV motion-only плиток, где API не прислал preview image.
+    private var shouldGenerateMotionPoster: Bool {
+        guard image == nil,
+              imageURL == nil,
+              let motionURL,
+              !motionURL.isEmpty,
+              !MediaVideoPlayer.isRasterMotionAssetURLString(motionURL) else {
+            return false
+        }
+        return true
+    }
+
+    private func restoreCachedMotionPosterIfNeeded() {
+        guard shouldGenerateMotionPoster,
+              let motionURL,
+              let cached = EffectMotionPosterCache.image(for: motionURL) else {
+            return
+        }
+        generatedMotionPoster = cached
+    }
+
+    @MainActor
+    private func applyGeneratedMotionPoster(_ image: UIImage, for motionURL: String) {
+        guard self.motionURL == motionURL else { return }
+        generatedMotionPoster = image
+    }
+
+    private func generateMotionPosterIfNeeded() async {
+        guard shouldGenerateMotionPoster,
+              let motionURL,
+              generatedMotionPoster == nil else {
+            return
+        }
+        if let cached = EffectMotionPosterCache.image(for: motionURL) {
+            await applyGeneratedMotionPoster(cached, for: motionURL)
+            return
+        }
+        // Не провоцируем лишние скачивания/инициализации AV при скролле: fallback-постер генерируем
+        // только когда файл motion уже в дисковом кэше.
+        guard EffectPreviewVideoDiskCache.hasCachedVideo(for: motionURL) else { return }
+        guard let localVideoURL = await EffectPreviewVideoDiskCache.shared.localPlaybackURLForThumbnail(urlString: motionURL),
+              let frame = await EffectMotionPosterCache.generateAndStorePoster(for: motionURL, localVideoURL: localVideoURL) else {
+            return
+        }
+        await applyGeneratedMotionPoster(frame, for: motionURL)
     }
 
     /// Тот же порог, что в `CachedAsyncImagePolicy`: иначе «HIT» из RAM даёт пустой/1px слой и кажется, что remote-постер «не грузится», хотя bundled при этом виден.
@@ -308,7 +451,7 @@ struct PreviewMediaView<Placeholder: View>: View {
 
     /// Есть что показать в слое постера (bundled или remote URL); пока jpeg качается, лоадер может быть в `CachedAsyncImage`.
     private var hasPosterVisualSource: Bool {
-        image != nil || imageURL != nil
+        image != nil || imageURL != nil || generatedMotionPoster != nil
     }
 
     /// Только mp4/webp без jpeg/bundled под низом.

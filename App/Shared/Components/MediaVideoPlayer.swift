@@ -1252,6 +1252,17 @@ actor EffectPreviewVideoDiskCache {
         }
     }
 
+    /// Для fallback-постера: переиспользуем тот же download/in-flight/cache путь, что и AVPlayer, но наружу отдаём только локальный файл.
+    func localPlaybackURLForThumbnail(urlString: String) async -> URL? {
+        guard let remoteURL = Self.normalizedAVHTTPURL(from: urlString) else { return nil }
+        switch await playbackURL(for: remoteURL) {
+        case .hit(let fileURL, _), .miss(let fileURL, _):
+            return fileURL
+        case .failed:
+            return nil
+        }
+    }
+
     /// Прогрев дискового кэша только для верхних видимых карточек: сохраняем remote preview-video заранее, чтобы при показе AVPlayer стартовал с локального файла.
     func prewarm(remoteURLStrings: [String], debugLogTag: String? = nil) async {
         let unique = Self.uniqueHTTPURLs(from: remoteURLStrings)
@@ -1469,11 +1480,18 @@ private struct AVPlayerLayerView: UIViewRepresentable {
             guard observedLayer !== layer || observedPlayer !== player else { return }
             observedLayer = layer
             observedPlayer = player
-            isReadyForDisplay.wrappedValue = layer.isReadyForDisplay
+            DispatchQueue.main.async {
+                let ready = layer.isReadyForDisplay
+                if isReadyForDisplay.wrappedValue != ready {
+                    isReadyForDisplay.wrappedValue = ready
+                }
+            }
             readyObservation = layer.observe(\.isReadyForDisplay, options: [.initial, .new]) { observedLayer, _ in
                 DispatchQueue.main.async {
                     let ready = observedLayer.isReadyForDisplay
-                    isReadyForDisplay.wrappedValue = ready
+                    if isReadyForDisplay.wrappedValue != ready {
+                        isReadyForDisplay.wrappedValue = ready
+                    }
                     if let debugLogTag {
                         // print("\(debugLogTag) MediaVideoPlayer layer.readyForDisplay=\(ready)")
                     }
@@ -1686,11 +1704,13 @@ private struct AnimatedRasterMotionView: View {
 }
 #endif
 
-// Debug «Clear Cache»: `ImageDownloader` + диск MP4 превью + SDWebImage/WebP cache; не трогает `GalleryThumbnailCache` и локальные файлы галереи.
+// Debug «Clear Cache»: `ImageDownloader` + диск MP4 превью + fallback-постеры + SDWebImage/WebP cache; не трогает `GalleryThumbnailCache` и локальные файлы галереи.
 enum NonGalleryMediaCacheCleaner {
-    /// Оценка размера на диске до `clearAll()`: каталоги `ImageCache` + `EffectPreviewVideos`. SDWebImage хранит WebP в своём cache namespace и очищается отдельно.
+    /// Оценка размера на диске до `clearAll()`: каталоги `ImageCache` + `EffectPreviewVideos` + `EffectMotionPosters`. SDWebImage хранит WebP в своём cache namespace и очищается отдельно.
     static func estimatedDiskBytesBeforeClear() -> Int64 {
-        ImageDownloader.shared.estimatedDiskCacheBytes() + EffectPreviewVideoDiskCache.estimatedDiskUsageBytes()
+        ImageDownloader.shared.estimatedDiskCacheBytes()
+            + EffectPreviewVideoDiskCache.estimatedDiskUsageBytes()
+            + EffectMotionPosterCache.estimatedDiskUsageBytes()
     }
 
     static func clearAll() async {
@@ -1699,6 +1719,7 @@ enum NonGalleryMediaCacheCleaner {
             AppState.shared.resetOnboardingHomeWarmupAfterCacheClear()
         }
         await EffectPreviewVideoDiskCache.shared.clearAll()
+        EffectMotionPosterCache.clearAll()
         await EffectsMediaOrchestrator.shared.resetCatalogWarmupStateAfterCacheClear()
         #if canImport(SDWebImage)
         await clearSDWebImagePreviewCache()

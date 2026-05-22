@@ -361,9 +361,6 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
 
     @State private var pageIndex: Int
     @State private var isJumping = false
-    /// Не вибрировать при программном `syncFromSelection` / перескоке кольца.
-    @State private var suppressSwipeHaptic = false
-    @State private var lastSwipeHapticPresetId: Int
 
     /// Расстояние между соседними карточками при свайпе: у `TabView(.page)` каждая страница на всю ширину, поэтому даём симметричный горизонтальный inset. (Не `static`: в generic-типах запрещены static stored properties.)
     private let interCardGap: CGFloat = 14
@@ -387,7 +384,6 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
         self.onCommit = onCommit
         let idx = presets.firstIndex { $0.id == selectionId } ?? 0
         _pageIndex = State(initialValue: presets.count > 1 ? idx + 1 : idx)
-        _lastSwipeHapticPresetId = State(initialValue: selectionId)
     }
 
     var body: some View {
@@ -429,7 +425,6 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
         let target = useLooping ? idx + 1 : idx
         guard pageIndex != target else { return }
 
-        suppressSwipeHaptic = true
         if animated {
             pageIndex = target
         } else {
@@ -437,54 +432,32 @@ private struct EffectDetailPresetCarousel<Card: View>: View {
             pageIndex = target
             DispatchQueue.main.async {
                 isJumping = false
-                suppressSwipeHaptic = false
-                lastSwipeHapticPresetId = selectionId
             }
-            return
         }
-        DispatchQueue.main.async {
-            suppressSwipeHaptic = false
-            lastSwipeHapticPresetId = selectionId
-        }
-    }
-
-    private func registerSwipeHapticIfNeeded(for preset: EffectPreset) {
-        guard !isJumping, !suppressSwipeHaptic else { return }
-        guard lastSwipeHapticPresetId != preset.id else { return }
-        LightImpactHaptics.play()
-        lastSwipeHapticPresetId = preset.id
     }
 
     private func commitVisiblePage(_ newValue: Int) {
         guard useLooping else {
             guard presets.indices.contains(newValue) else { return }
-            let preset = presets[newValue]
-            registerSwipeHapticIfNeeded(for: preset)
-            onCommit(preset)
+            onCommit(presets[newValue])
             return
         }
 
         if newValue == 0 {
-            let preset = presets[presets.count - 1]
-            registerSwipeHapticIfNeeded(for: preset)
-            onCommit(preset)
+            onCommit(presets[presets.count - 1])
             jump(to: presets.count)
             return
         }
 
         if newValue == extended.count - 1 {
-            let preset = presets[0]
-            registerSwipeHapticIfNeeded(for: preset)
-            onCommit(preset)
+            onCommit(presets[0])
             jump(to: 1)
             return
         }
 
         let realIndex = newValue - 1
         guard presets.indices.contains(realIndex) else { return }
-        let preset = presets[realIndex]
-        registerSwipeHapticIfNeeded(for: preset)
-        onCommit(preset)
+        onCommit(presets[realIndex])
     }
 
     private func jump(to target: Int) {
