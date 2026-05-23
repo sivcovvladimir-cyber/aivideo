@@ -14,18 +14,11 @@ struct EffectCatalogRailCard: View {
     let allowsMotionPreview: Bool
     let showsPosterBeforeMotion: Bool
     let autoplayEnabled: Bool
-    let forcePauseMotion: Bool
     let onVisibilityChanged: ((Bool) -> Void)?
     let onTap: () -> Void
 
     @State private var isVisibleInHierarchy = true
     @State private var isActuallyVisibleOnScreen = false
-    /// Порог geometry (≥35% площади в viewport): отдельно от `isActuallyVisibleOnScreen`, чтобы при медленном скролле не перезапускать 150 мс на каждом кадре `onChange(frame)`.
-    @State private var geometryReportsVisible = false
-    /// Задержка 150 мс после входа в viewport только для AV motion (mp4/mov); WebP/GIF — без паузы.
-    @State private var pendingVisibleTask: Task<Void, Never>?
-
-    private static let avMotionAutoplayDebounceNs: UInt64 = 150_000_000
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -34,7 +27,6 @@ struct EffectCatalogRailCard: View {
         allowsMotionPreview: Bool,
         showsPosterBeforeMotion: Bool,
         autoplayEnabled: Bool = true,
-        forcePauseMotion: Bool = false,
         onVisibilityChanged: ((Bool) -> Void)? = nil,
         onTap: @escaping () -> Void
     ) {
@@ -43,17 +35,14 @@ struct EffectCatalogRailCard: View {
         self.allowsMotionPreview = allowsMotionPreview
         self.showsPosterBeforeMotion = showsPosterBeforeMotion
         self.autoplayEnabled = autoplayEnabled
-        self.forcePauseMotion = forcePauseMotion
         self.onVisibilityChanged = onVisibilityChanged
         self.onTap = onTap
     }
 
     private var sessionScope: String {
         switch layout {
-        case .railFixed142x190:
-            return "home-rail"
-        case .gridTwoColumnCell:
-            return "browse-grid"
+        case .railFixed142x190: return "home-rail"
+        case .gridTwoColumnCell: return "browse-grid"
         }
     }
 
@@ -69,32 +58,30 @@ struct EffectCatalogRailCard: View {
         allowsMotionPreview && motionURLString != nil
     }
 
-    /// WebP/GIF через SDWebImage: лёгче AVPlayer — дебаунс 150 мс на вход в viewport не нужен.
-    private var isRasterMotionPreview: Bool {
-        guard let motionURLString else { return false }
-        return MediaVideoPlayer.isRasterMotionAssetURLString(motionURLString)
-    }
-
     private var runVideo: Bool {
         allowsMotionPreview &&
         motionURLString != nil &&
         autoplayEnabled &&
         isVisibleInHierarchy &&
         isActuallyVisibleOnScreen &&
-        scenePhase == .active &&
-        !forcePauseMotion
+        scenePhase == .active
     }
 
-    /// Каталог: не поднимаем paused-плеер для видимых, но не-autoplay плиток. Это даёт самый большой выигрыш по числу одновременных AVPlayer при вертикальном скролле; «рывок» при последующем старте сглажен постером из первого кадра видео.
-    private var preloadVideoWhenPaused: Bool { false }
+    /// Прогрев paused-плеера для карточек вне лимита autoplay: убирает рывок при включении воспроизведения.
+    private var preloadVideoWhenPaused: Bool {
+        allowsMotionPreview &&
+        motionURLString != nil &&
+        !autoplayEnabled &&
+        isVisibleInHierarchy &&
+        isActuallyVisibleOnScreen &&
+        scenePhase == .active
+    }
 
     private var debugContext: String {
         let screen: String
         switch layout {
-        case .railFixed142x190:
-            screen = "home-rail"
-        case .gridTwoColumnCell:
-            screen = "view-all-grid"
+        case .railFixed142x190: screen = "home-rail"
+        case .gridTwoColumnCell: screen = "view-all-grid"
         }
         return "\(screen) id=\(item.preset.id) slug=\(item.preset.slug) title='\(item.preset.title)'"
     }
@@ -109,12 +96,9 @@ struct EffectCatalogRailCard: View {
             isVisibleInHierarchy = true
         }
         .onDisappear {
-            pendingVisibleTask?.cancel()
-            pendingVisibleTask = nil
+            isVisibleInHierarchy = false
+            isActuallyVisibleOnScreen = false
             DispatchQueue.main.async {
-                isVisibleInHierarchy = false
-                geometryReportsVisible = false
-                isActuallyVisibleOnScreen = false
                 onVisibilityChanged?(false)
             }
         }
@@ -131,10 +115,9 @@ struct EffectCatalogRailCard: View {
         }
     }
 
-    /// В `LazyHStack` onAppear может приходить для предзагруженных карточек вне экрана.
-    /// Считаем карточку «видимой» только когда заметная часть реально попала в viewport.
-    /// Вход в viewport: один таймер 150 мс (и при медленном скролле — не сбрасываем его на каждом кадре движения).
-    /// Быстрый скролл: плитка успевает уйти до конца 150 мс — AVPlayer не поднимаем. Выход — сразу.
+    /// Считаем карточку видимой если ≥35% площади пересекается с viewport.
+    /// `LazyVStack` гарантирует, что живы только карточки ближайших ~3–4 секций,
+    /// поэтому `onChange` на вертикальный скролл срабатывает для ~20–30 карточек, а не для всех.
     private func updateActualVisibility(using globalFrame: CGRect) {
         guard globalFrame.width > 1, globalFrame.height > 1 else { return }
 
@@ -144,40 +127,12 @@ struct EffectCatalogRailCard: View {
         let fullArea = globalFrame.width * globalFrame.height
         guard fullArea > 0 else { return }
 
-        // Порог убирает дребезг на краях и частично видимых превью.
-        let crossesVisibleThreshold = (visibleArea / fullArea) >= 0.35
-        guard crossesVisibleThreshold != geometryReportsVisible else { return }
+        let isVisible = (visibleArea / fullArea) >= 0.35
+        guard isVisible != isActuallyVisibleOnScreen else { return }
 
-        // `GeometryReader.onChange` приходит в ходе layout-pass; меняем @State отложенно, чтобы
-        // не ловить "Publishing changes from within view updates is not allowed".
-        if crossesVisibleThreshold {
-            DispatchQueue.main.async {
-                guard !geometryReportsVisible else { return }
-                geometryReportsVisible = true
-                guard !isActuallyVisibleOnScreen, pendingVisibleTask == nil else { return }
-                if isRasterMotionPreview {
-                    isActuallyVisibleOnScreen = true
-                    onVisibilityChanged?(true)
-                } else {
-                    let task = Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: Self.avMotionAutoplayDebounceNs)
-                        guard !Task.isCancelled, geometryReportsVisible, !isActuallyVisibleOnScreen else { return }
-                        pendingVisibleTask = nil
-                        isActuallyVisibleOnScreen = true
-                        onVisibilityChanged?(true)
-                    }
-                    pendingVisibleTask = task
-                }
-            }
-        } else {
-            pendingVisibleTask?.cancel()
-            pendingVisibleTask = nil
-            DispatchQueue.main.async {
-                guard geometryReportsVisible || isActuallyVisibleOnScreen else { return }
-                geometryReportsVisible = false
-                isActuallyVisibleOnScreen = false
-                onVisibilityChanged?(false)
-            }
+        isActuallyVisibleOnScreen = isVisible
+        DispatchQueue.main.async {
+            onVisibilityChanged?(isVisible)
         }
     }
 
@@ -199,7 +154,7 @@ struct EffectCatalogRailCard: View {
         }
     }
 
-    /// Заголовок и градиент привязаны к **слоту плитки**, а не к внутреннему размеру медиа: `WKWebView`/постер не должны раздувать область оверлея (иначе текст пропадает или уезжает).
+    /// Заголовок и градиент привязаны к слоту плитки, а не к внутреннему размеру медиа.
     private func catalogTile(width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             // Фикс стабильной кликабельности: прозрачная подложка + contentShape дают Button
@@ -224,7 +179,6 @@ struct EffectCatalogRailCard: View {
             motionURL: shouldPassMotionURLToPreview ? motionURLString : nil,
             shouldPlayMotion: runVideo,
             preloadsMotionWhenHidden: preloadVideoWhenPaused,
-            // Для main/view-all suppress постера разрешаем только когда motion превью вообще включён флагом конфига.
             showsLoadingIndicator: false,
             prefersMotionWhenCached: allowsMotionPreview,
             showsPosterBeforeMotion: showsPosterBeforeMotion,
@@ -232,7 +186,6 @@ struct EffectCatalogRailCard: View {
             debugContext: debugContext,
             posterNetworkRequestTimeout: ImageDownloader.effectPreviewPosterNetworkRequestTimeoutSeconds
         ) {
-            // Как на detail: сначала лоадер, пока тянется remote-постер; затем картинка и поверх — видео (bundled-картинка без URL показывается сразу, без этого шага).
             if item.preset.previewImageURL != nil {
                 ZStack {
                     AppTheme.Colors.cardBackground
@@ -243,24 +196,17 @@ struct EffectCatalogRailCard: View {
                 AppTheme.Colors.cardBackground
             }
         }
-        // Важно оставить сам PreviewMediaView hit-testable как часть label у Button:
-        // если выключить hit-testing на всём слое, SwiftUI может потерять tappable-область карточки в ScrollView/Lazy*.
     }
 
     private var catalogTitleOverlay: some View {
-        // AVPlayerLayer иногда оказывается выше SwiftUI-слоёв внутри превью; здесь слой только типографика/градиент поверх уже обрезанного слота.
         ZStack(alignment: .bottomLeading) {
             LinearGradient(
-                colors: [
-                    Color.black.opacity(0),
-                    Color.black.opacity(0.58)
-                ],
+                colors: [Color.black.opacity(0), Color.black.opacity(0.58)],
                 startPoint: .center,
                 endPoint: .bottom
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Текст поверх фото/видео + тёмный scrim: `textPrimary` в light даёт чёрный и пропадает на тени кадра — как на hero, оставляем светлую подпись в любой теме приложения.
             Text(item.preset.title)
                 .font(AppTheme.Typography.caption)
                 .foregroundStyle(Color.white.opacity(0.95))
@@ -271,7 +217,6 @@ struct EffectCatalogRailCard: View {
         }
         .allowsHitTesting(false)
     }
-
 }
 
 private struct EffectCatalogCardChrome: ViewModifier {

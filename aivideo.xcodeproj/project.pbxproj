@@ -32,7 +32,6 @@
 		FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00132F10000100000013 /* TokenWalletService.swift */; };
 		FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00152F10000100000015 /* PixVerseAPIService.swift */; };
 		FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00172F10000100000017 /* GenerationJobService.swift */; };
-		FA6E00502F10000100000050 /* GenerationFailureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */; };
 		FA6E00182F10000100000018 /* GenerationProgressOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */; };
 		FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001B2F1000010000001B /* GenerationBillingService.swift */; };
 		FA6E001C2F1000010000001C /* EffectsSectionBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */; };
@@ -43,6 +42,7 @@
 		FA6E00422F10000100000042 /* PreviewMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00432F10000100000043 /* PreviewMediaView.swift */; };
 		FA6E00442F10000100000044 /* MediaVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00452F10000100000045 /* MediaVideoPlayer.swift */; };
 		FA6E00462F10000100000048 /* EffectPreset+BundledPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00472F10000100000049 /* EffectPreset+BundledPreview.swift */; };
+		FA6E00502F10000100000050 /* GenerationFailureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */; };
 		FA6E00502F30000100000052 /* PrimaryCTAButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00512F30000100000053 /* PrimaryCTAButton.swift */; };
 		FA6E00562F30000100000056 /* RoundThumbSwitchToggleStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */; };
 		FA6E005C2F3000010000005C /* EffectsHomePayloadDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */; };
@@ -134,7 +134,6 @@
 		FA6E00132F10000100000013 /* TokenWalletService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenWalletService.swift; sourceTree = "<group>"; };
 		FA6E00152F10000100000015 /* PixVerseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixVerseAPIService.swift; sourceTree = "<group>"; };
 		FA6E00172F10000100000017 /* GenerationJobService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationJobService.swift; sourceTree = "<group>"; };
-		FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationFailureDiagnostics.swift; sourceTree = "<group>"; };
 		FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationProgressOverlayView.swift; sourceTree = "<group>"; };
 		FA6E001B2F1000010000001B /* GenerationBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationBillingService.swift; sourceTree = "<group>"; };
 		FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSectionBrowseView.swift; sourceTree = "<group>"; };
@@ -145,6 +144,7 @@
 		FA6E00432F10000100000043 /* PreviewMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewMediaView.swift; sourceTree = "<group>"; };
 		FA6E00452F10000100000045 /* MediaVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaVideoPlayer.swift; sourceTree = "<group>"; };
 		FA6E00472F10000100000049 /* EffectPreset+BundledPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EffectPreset+BundledPreview.swift"; sourceTree = "<group>"; };
+		FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationFailureDiagnostics.swift; sourceTree = "<group>"; };
 		FA6E00512F30000100000053 /* PrimaryCTAButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryCTAButton.swift; sourceTree = "<group>"; };
 		FA6E00572F30000100000057 /* RoundThumbSwitchToggleStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundThumbSwitchToggleStyle.swift; sourceTree = "<group>"; };
 		FA6E005D2F3000010000005D /* EffectsHomePayloadDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsHomePayloadDiskCache.swift; sourceTree = "<group>"; };
@@ -1032,7 +1032,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1041,8 +1041,8 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = aivideo/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "AI Video";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
+				INFOPLIST_KEY_CFBundleDisplayName = PixVideo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to capture photos for your logo design";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "This app needs access to save your AI-generated logos to your photo library";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to your photo library to save and share your generated logos";
@@ -1061,7 +1061,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.1;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1084,7 +1084,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1093,8 +1093,8 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = aivideo/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "AI Video";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
+				INFOPLIST_KEY_CFBundleDisplayName = PixVideo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to capture photos for your logo design";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "This app needs access to save your AI-generated logos to your photo library";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to your photo library to save and share your generated logos";
@@ -1113,7 +1113,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.1;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -423,7 +423,13 @@ struct PromptGenerationView: View {
     private var promptActionsRow: some View {
         Group {
             if isTwoImageVideoScenario {
-                twoImageVideoChipsRow
+                // ViewThatFits: сначала полные подписи, при нехватке ширины — компактные.
+                // Без fixedSize на чипах, иначе на iOS 18 layout-frame и hit-area расходятся.
+                ViewThatFits(in: .horizontal) {
+                    twoImageVideoChipsRow(fusionTagsCompact: false)
+                    twoImageVideoChipsRow(fusionTagsCompact: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             } else if !hasReferencePhotos {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
@@ -440,10 +446,8 @@ struct PromptGenerationView: View {
         }
     }
 
-    
-    private var twoImageVideoChipsRow: some View {
+    private func twoImageVideoChipsRow(fusionTagsCompact: Bool) -> some View {
         HStack(spacing: 8) {
-            Spacer(minLength: 0)
             if twoImageVideoMode == .transition {
                 promptActionCapsule(
                     title: transitionStyleChipTitle,
@@ -458,8 +462,8 @@ struct PromptGenerationView: View {
                         title: tag,
                         accessibilityLabel: tag,
                         accessibilityValue: nil,
-                        isCompactTag: true,
-                        action: { insertFusionTag(tag) }
+                        action: { insertFusionTag(tag) },
+                        useCompactTitle: fusionTagsCompact
                     )
                 }
             }
@@ -471,6 +475,7 @@ struct PromptGenerationView: View {
                 action: cycleTwoImageVideoMode
             )
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var transitionStyleChipTitle: String {
@@ -481,16 +486,15 @@ struct PromptGenerationView: View {
     }
 
     /// Чип в стиле «Удиви меня»: капсула в нижней строке промпт-карточки.
-    /// Контракт hit-area: размер, `contentShape` и `fixedSize` живут ТОЛЬКО на label.
-    /// Снаружи Button — только buttonStyle/accessibility, иначе на iOS 17 связка кастомного buttonStyle
-    /// с двойным `.contentShape` иногда роняет hit-зону до центральной точки чипа.
+    /// Контракт hit-area: contentShape совпадает с фоном (Capsule). Без fixedSize на label —
+    /// на iOS 18 fixedSize сбивает layout-frame относительно родителя и tap-area расходится с видимым чипом.
     private func promptActionCapsule(
         title: String,
         systemImage: String? = nil,
         accessibilityLabel: String,
         accessibilityValue: String?,
-        isCompactTag: Bool = false,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        useCompactTitle: Bool = false
     ) -> some View {
         Button {
             dismissPromptKeyboard()
@@ -499,24 +503,20 @@ struct PromptGenerationView: View {
             HStack(spacing: systemImage == nil ? 0 : 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: useCompactTitle ? 11 : 12, weight: .semibold))
                 }
                 Text(title)
-                    .font(isCompactTag ? AppTheme.Typography.caption.weight(.semibold) : AppTheme.Typography.bodySecondary.weight(.semibold))
+                    .font(useCompactTitle ? AppTheme.Typography.caption.weight(.semibold) : AppTheme.Typography.bodySecondary.weight(.semibold))
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: true)
+                    .minimumScaleFactor(useCompactTitle ? 0.9 : 0.82)
             }
             .foregroundColor(AppTheme.Colors.textPrimary)
-            .padding(.horizontal, isCompactTag ? 12 : 14)
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
+            .padding(.horizontal, useCompactTitle ? 10 : 14)
+            .padding(.vertical, useCompactTitle ? 8 : 10)
             .background(AppTheme.Colors.background.opacity(0.42), in: Capsule(style: .continuous))
-            // Rectangle: углы Capsule тоже ловят тап (иначе скруглённые концы визуально есть, но не нажимаются).
-            .contentShape(Rectangle())
-            .fixedSize(horizontal: true, vertical: false)
+            .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(ThemedPlainButtonStyle())
-        .layoutPriority(isCompactTag ? 0 : 1)
+        .appPlainButtonStyle()
         .accessibilityLabel(Text(accessibilityLabel))
         .modifier(PromptActionCapsuleAccessibilityValue(value: accessibilityValue))
     }
