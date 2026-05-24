@@ -9,10 +9,6 @@ struct OnboardingPage {
 
 // Высота hero как на paywall: считаем долю экрана от aspect ratio видео-контента.
 private enum OnboardingHeroLayout {
-    static var screenAspectRatio: CGFloat {
-        UIScreen.main.bounds.width / UIScreen.main.bounds.height
-    }
-
     static func videoAspectRatio(for videoURL: URL?) -> CGFloat {
         guard let videoURL else { return 16.0 / 9.0 }
         let asset = AVURLAsset(url: videoURL)
@@ -25,20 +21,20 @@ private enum OnboardingHeroLayout {
         return w / h
     }
 
-    static func frameHeight(forVideoURL videoURL: URL?) -> CGFloat {
-        let contentAspect = videoAspectRatio(for: videoURL)
-        let aspectRatioRatio = screenAspectRatio / contentAspect
+    /// Минимальная доля высоты экрана для hero: если при полной ширине видео ниже — слот 85%, плеер `.fill` обрежет бока.
+    static let minimumScreenHeightFraction: CGFloat = 0.82
 
-        let percentage: CGFloat
-        if aspectRatioRatio < 0.75 {
-            percentage = 0.75
-        } else if aspectRatioRatio > 0.85 {
-            percentage = 0.85
-        } else {
-            percentage = ceil(aspectRatioRatio * 100) / 100
+    static func frameHeight(forVideoURL videoURL: URL?) -> CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let screenWidth = UIScreen.main.bounds.width
+        let contentAspect = videoAspectRatio(for: videoURL)
+        let heightAtFullWidth = screenWidth / contentAspect
+        let targetHeight = screenHeight * minimumScreenHeightFraction
+
+        if heightAtFullWidth < targetHeight {
+            return targetHeight
         }
-        
-        return UIScreen.main.bounds.height * percentage
+        return min(heightAtFullWidth, targetHeight)
     }
 }
 
@@ -118,24 +114,28 @@ private enum OnboardingBottomChrome {
 
 // Онбординг всегда визуально как тёмная тема: фон/скрим не зависят от выбранной темы приложения, заголовок без градиента — читаемость на коллаже.
 private enum OnboardingVisual {
-    /// Совпадает с `AppTheme.Colors` для `.dark` (`mainBackgroundRGB`).
+    /// Фон экрана — как было (не трогаем при смене цвета скрима).
     static let backdrop = Color(red: 0.09, green: 0.10, blue: 0.13)
+    /// Только градиент под текст/кнопку: чёрный вместо сине-серого `backdrop`.
+    static let bottomScrim = Color.black
     static let title = Color.white
-    static let subtitle = Color.white.opacity(0.72)
+    /// Описание — белое, как заголовок (не приглушённый secondary).
+    static let description = Color.white
 }
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @State private var currentPage = 0
 
-    /// Нижний скрим: всегда затемнение к тёмному фону (не белая вуаль из light-темы).
+    /// Нижний скрим: те же stops, что всегда на онбординге; меняется только цвет (`bottomScrim` = black).
     private var onboardingBottomScrim: some View {
-        LinearGradient(
+        let scrim = OnboardingVisual.bottomScrim
+        return LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: OnboardingVisual.backdrop.opacity(0), location: 0),
-                .init(color: OnboardingVisual.backdrop.opacity(0.3), location: 0.2),
-                .init(color: OnboardingVisual.backdrop, location: 0.75),
-                .init(color: OnboardingVisual.backdrop, location: 1),
+                .init(color: scrim.opacity(0), location: 0),
+                .init(color: scrim.opacity(0.3), location: 0.2),
+                .init(color: scrim, location: 0.75),
+                .init(color: scrim, location: 1),
             ]),
             startPoint: .top,
             endPoint: .bottom
@@ -157,8 +157,8 @@ struct OnboardingView: View {
         let height = OnboardingHeroLayout.frameHeight(forVideoURL: videoURL)
         if let videoURL {
             LoopingVideoPlayer(playbackURL: videoURL, playbackVolume: 0.1)
-                .frame(height: height)
-                .frame(maxWidth: .infinity)
+                .frame(width: UIScreen.main.bounds.width, height: height)
+                .clipped()
         } else {
             let fallbackName = "Onboarding\(pageIndex + 1)"
             GeometryReader { geo in
@@ -210,9 +210,9 @@ struct OnboardingView: View {
                 VStack {
                     Spacer()
 
-                    VStack(spacing: 20) {
-                        // Заголовок и описание ближе друг к другу; до кнопки оставляем прежний интервал.
-                        VStack(spacing: 8) {
+                    // Текст отдельно от кнопки: 16pt title↔desc (4 ед.), 32pt desc↔кнопка (8 ед.) — раньше ошибочно всё в одном VStack(spacing: 16).
+                    VStack(spacing: 0) {
+                        VStack(spacing: AppTheme.Spacing.medium) {
                             Text(pages[currentPage].title)
                                 .font(AppTheme.Typography.title)
                                 .foregroundColor(OnboardingVisual.title)
@@ -221,11 +221,13 @@ struct OnboardingView: View {
                                 .multilineTextAlignment(.center)
                             Text(pages[currentPage].description)
                                 .font(AppTheme.Typography.body)
-                                .foregroundColor(OnboardingVisual.subtitle)
+                                .foregroundColor(OnboardingVisual.description)
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.88)
                                 .multilineTextAlignment(.center)
                         }
+                        .padding(.bottom, AppTheme.Spacing.extraLarge)
+
                         Button(action: {
                             if currentPage < pages.count - 1 {
                                 currentPage += 1

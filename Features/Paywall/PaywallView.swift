@@ -1193,10 +1193,10 @@ fileprivate enum PaywallPlanTileChrome {
     static let title = Color.white.opacity(0.85)
     static let secondary = Color.white.opacity(0.72)
     static let savingsPillBackground = Color.white.opacity(0.14)
-    /// Невыбранная плитка: чуть темнее холста, чтобы плитки не сливались с оверлеем.
-    static let defaultTileBackground = Color(red: 0.07, green: 0.08, blue: 0.11)
-    /// Выбранная плитка: на шаг светлее default + лёгкий оттенок `primary` поверх (не заливка).
-    static let selectedTileBaseBackground = Color(red: 0.10, green: 0.11, blue: 0.13)
+    /// Невыбранная плитка: `AppTheme.Colors.paywallPlanTileBackground` — темнее холста `paywallCardBackground`.
+    static let defaultTileBackground = AppTheme.Colors.paywallPlanTileBackground
+    /// Выбранная плитка: `paywallPlanTileSelectedBackground` + лёгкий оттенок `primary` поверх.
+    static let selectedTileBaseBackground = AppTheme.Colors.paywallPlanTileSelectedBackground
     static let selectedTilePrimaryTintOpacity: CGFloat = 0.10
 }
 

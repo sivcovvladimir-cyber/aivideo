@@ -43,7 +43,7 @@ struct EffectsSectionBrowseView: View {
                 )
 
                 ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: gridColumns, spacing: 16) {
+                    LazyVGrid(columns: gridColumns, spacing: 12) {
                         // В view-all включаем autoplay только для последних видимых N карточек:
                         // при скролле новые видимые ячейки вытесняют старые, чтобы playback-слоты не "залипали" вне экрана.
                         ForEach(section.items) { item in

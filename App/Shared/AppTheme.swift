@@ -247,6 +247,12 @@ struct AppTheme {
         
         /// Темный фон для пейвола (одинаковый для всех тем)
         static let paywallCardBackground = Color(red: 0.13, green: 0.14, blue: 0.16)
+
+        /// Невыбранная плитка тарифа/пакета на пейволе — темнее `paywallCardBackground`, в тон вложенным панелям генерации.
+        static let paywallPlanTileBackground = Color(red: 0.06, green: 0.07, blue: 0.095)
+
+        /// Выбранная плитка: между `paywallPlanTileBackground` и `paywallCardBackground`.
+        static let paywallPlanTileSelectedBackground = Color(red: 0.09, green: 0.10, blue: 0.12)
         
         /// Продуктовый primary-градиент (Figma): один источник для кнопок, чипов, таб «Создать» и т.д. — везде `AppTheme.Colors.primaryGradient`.
         static var primaryGradient: LinearGradient {

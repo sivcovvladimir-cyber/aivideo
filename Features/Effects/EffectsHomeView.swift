@@ -18,6 +18,7 @@ struct EffectsHomeView: View {
     @State private var heroCarouselSuppressNextUserInteractionMark = false
     private let railAutoplayLimit = 3
     @State private var railVisibleAutoplayQueueBySection: [String: [String]] = [:]
+
     private var payload: EffectsHomePayload? { appState.sessionEffectsHomePayload }
     private var homePreviewWarmupIdentity: String {
         guard let payload else { return "none" }
