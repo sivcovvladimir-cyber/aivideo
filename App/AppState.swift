@@ -161,8 +161,19 @@ final class AppState: ObservableObject {
     }
 
     /// Майлстоуны по счёту генераций, после которых показывать запрос оценки (из конфига / Adapty).
+    /// Нулевой майлстоун (`0`) исключаем из этого массива: показ при первом открытии Home настраивается отдельным флагом.
     var showRatingAfterGenerations: [Int] {
-        PaywallCacheManager.shared.paywallConfig?.logic.showRatingAfterGenerations ?? []
+        (PaywallCacheManager.shared.paywallConfig?.logic.showRatingAfterGenerations ?? []).filter { $0 > 0 }
+    }
+
+    /// Показывать ли рейтинг через 3 секунды после первого открытия Home.
+    /// Новый флаг `showRatingOnFirstHomeOpen` имеет приоритет; `0` в legacy-массиве поддерживаем для обратной совместимости.
+    private var showRatingOnFirstHomeOpen: Bool {
+        let logic = PaywallCacheManager.shared.paywallConfig?.logic
+        if let explicit = logic?.showRatingOnFirstHomeOpen {
+            return explicit
+        }
+        return logic?.showRatingAfterGenerations?.contains(0) ?? false
     }
 
     // MARK: - PRO generation tracking
@@ -375,12 +386,32 @@ final class AppState: ObservableObject {
     /// Предзагружает данные Paywall в фоне
     private func preloadPaywallData() async -> Bool {
         print("💰 [AppState] Начинаем предзагрузку данных Paywall")
-        let success = await PaywallCacheManager.shared.loadAndCachePaywallDataAsync()
+        // На старте сначала даём быстрый cache-first (мгновенные экраны), затем дожимаем
+        // актуальные remote overrides из Adapty через force refresh, чтобы стоимость/лимиты
+        // обновлялись до открытия paywall-экрана.
+        let warmSuccess = await PaywallCacheManager.shared.loadAndCachePaywallDataAsync(forceRefresh: false)
         self.tokenWallet.syncWithCurrentConfig()
-        if success {
-            print("✅ [AppState] Данные Paywall предзагружены")
+        if warmSuccess {
+            print("✅ [AppState] Paywall cache-first предзагрузка успешна")
         } else {
-            print("⚠️ [AppState] Ошибка предзагрузки данных Paywall")
+            print("⚠️ [AppState] Paywall cache-first предзагрузка с ошибкой")
+        }
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+
+        let forceSuccess = await PaywallCacheManager.shared.loadAndCachePaywallDataAsync(forceRefresh: true)
+        self.tokenWallet.syncWithCurrentConfig()
+        if forceSuccess {
+            print("✅ [AppState] Paywall force-refresh предзагрузка успешна")
+        } else {
+            print("⚠️ [AppState] Paywall force-refresh предзагрузка с ошибкой")
+        }
+
+        let success = warmSuccess || forceSuccess
+        if success {
+            print("✅ [AppState] Данные Paywall предзагружены (с учётом force-refresh)")
+        } else {
+            print("⚠️ [AppState] Не удалось предзагрузить данные Paywall")
         }
         return success
     }
@@ -460,22 +491,52 @@ final class AppState: ObservableObject {
         let milestones = showRatingAfterGenerations
         let alreadyShown = ratingModalShownAtGenerations
         let countSnapshot = successfulGenerationsCount
-        if !hasUserRatedAppPositive, milestones.contains(countSnapshot), !alreadyShown.contains(countSnapshot) {
+        if countSnapshot != 0,
+           !hasUserRatedAppPositive,
+           milestones.contains(countSnapshot),
+           !alreadyShown.contains(countSnapshot) {
             addPendingRatingPromptMilestone(countSnapshot)
         }
+    }
+
+    /// Через 3 с после появления Home (онбординг → главная), один раз на установку — если включён флаг `showRatingOnFirstHomeOpen` (или legacy `0`).
+    @MainActor
+    func scheduleRatingPromptOnHomeOpenIfNeeded() async {
+        guard !hasUserRatedAppPositive else { return }
+        guard showRatingOnFirstHomeOpen else { return }
+        guard !ratingModalShownAtGenerations.contains(0) else { return }
+        guard case .effectsHome = currentScreen else { return }
+        guard !isPaywallOverlayPresented else { return }
+        // guard dynamicModalManager != nil else { return }
+
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        guard !Task.isCancelled else { return }
+
+        guard !hasUserRatedAppPositive else { return }
+        guard showRatingOnFirstHomeOpen else { return }
+        guard !ratingModalShownAtGenerations.contains(0) else { return }
+        guard case .effectsHome = currentScreen else { return }
+        guard !isPaywallOverlayPresented else { return }
+        // guard dynamicModalManager != nil else { return }
+
+        markRatingModalShown(at: 0)
+        presentAppRatingPrompt()
     }
 
     /// Вызывать при закрытии полноэкранного `MediaDetailView` (галерея или оверлей после генерации).
     /// Один показ на майлстоун из `showRatingAfterGenerations`; за один выход — не больше одного диалога (самый ранний ожидающий).
     func handleMediaDetailDismissed() {
         guard !hasUserRatedAppPositive else { return }
-        guard dynamicModalManager != nil else { return }
+        // guard dynamicModalManager != nil else { return }
 
         let milestoneSet = Set(showRatingAfterGenerations)
         let shownSet = Set(ratingModalShownAtGenerations)
         var pending = pendingRatingPromptMilestones
 
-        pending = pending.filter { milestoneSet.contains($0) && !shownSet.contains($0) && successfulGenerationsCount >= $0 }
+        // `0` — только с Home через 3 с, не из очереди после MediaDetail.
+        pending = pending.filter {
+            $0 != 0 && milestoneSet.contains($0) && !shownSet.contains($0) && successfulGenerationsCount >= $0
+        }
         setPendingRatingPromptMilestones(pending)
 
         guard let m = pending.min() else { return }
@@ -683,10 +744,7 @@ final class AppState: ObservableObject {
         }
 
         let currentBalance = tokenWallet.balance
-        let description = tokensInsufficientModalDescription(
-            currentBalance: currentBalance,
-            requiredTokens: requiredTokens
-        )
+        let description = "tokens_insufficient_body".localized(with: currentBalance, requiredTokens)
         modalManager.showModal(with: DynamicModalConfig(
             title: "tokens_insufficient_title".localized,
             description: description,
@@ -703,32 +761,36 @@ final class AppState: ObservableObject {
             showsHeroDecoration: true
         ))
     }
-
-    /// В модалке нехватки токенов всегда даём явный сценарий ожидания до завтра отдельной строкой.
-    private func tokensInsufficientModalDescription(currentBalance: Int, requiredTokens: Int) -> String {
-        let body = "tokens_insufficient_body".localized(with: currentBalance, requiredTokens)
-        let tomorrowHint = "tokens_insufficient_wait_until_tomorrow_or".localized
-        return "\(body)\n\(tomorrowHint)"
-    }
     
     /// Диалог «нравится приложение» → при «Да» системный запрос оценки; при «Нет» только закрытие (без экрана «что не понравилось» — не дожимаем после отказа).
+    /// Сейчас кастомная модалка закомментирована — сразу показываем системный review.
     func presentAppRatingPrompt() {
-        guard let modalManager = dynamicModalManager else {
-            return
+        // Временно: без промежуточной модалки — сразу StoreKit.
+        // markUserRatedAppPositive()
+        
+        if #available(iOS 14.0, *) {
+            RateService().requestReview()
+        } else {
+            RateService().rateApp()
         }
 
-        let config = DynamicModalConfig.appRating(
-            primaryAction: {
-                self.markUserRatedAppPositive()
-                // Показываем нативный диалог оценки
-                if #available(iOS 14.0, *) {
-                    RateService().requestReview()
-                } else {
-                    RateService().rateApp()
-                }
-            }
-        )
-        modalManager.showModal(with: config)
+        // --- было: кастомная модалка перед системным окном оценки ---
+        // guard let modalManager = dynamicModalManager else {
+        //     return
+        // }
+        //
+        // let config = DynamicModalConfig.appRating(
+        //     primaryAction: {
+        //         self.markUserRatedAppPositive()
+        //         // Показываем нативный диалог оценки
+        //         if #available(iOS 14.0, *) {
+        //             RateService().requestReview()
+        //         } else {
+        //             RateService().rateApp()
+        //         }
+        //     }
+        // )
+        // modalManager.showModal(with: config)
     }
     
     func removeGeneratedMedia(withId id: String) {

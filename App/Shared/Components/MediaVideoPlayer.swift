@@ -1411,6 +1411,9 @@ actor EffectPreviewVideoDiskCache {
         do {
             return try await performDownload(from: remoteURL, to: destinationURL, timeout: primaryTimeout)
         } catch {
+            if PreviewMediaURLFallback.isR2Host(remoteURL) {
+                PreviewMediaAccessNotifier.notifyR2PrimaryLoadFailed(originalURL: remoteURL.absoluteString)
+            }
             // Если исходный CDN недоступен (региональные блокировки), делаем retry по PixVerse URL, вычисленному из имени файла.
             guard let fallbackURL = PreviewMediaURLFallback.fallbackURL(from: remoteURL),
                   fallbackURL != remoteURL else {

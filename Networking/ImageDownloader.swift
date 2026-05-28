@@ -22,7 +22,7 @@ enum PreviewMediaURLFallback {
     }
 
     static func fallbackURL(from sourceURL: URL) -> URL? {
-        guard let host = sourceURL.host?.lowercased(), host.contains(blockedHostToken) else { return nil }
+        guard isR2Host(sourceURL) else { return nil }
         let fileName = sourceURL.lastPathComponent.removingPercentEncoding ?? sourceURL.lastPathComponent
         guard !fileName.isEmpty else { return nil }
         var pixversePath = fileName
@@ -31,6 +31,46 @@ enum PreviewMediaURLFallback {
             pixversePath.replaceSubrange(idx...idx, with: "/")
         }
         return URL(string: pixverseBase + pixversePath)
+    }
+
+    /// Превью с R2/CDN (`*.r2.dev`) — для подсказки про VPN при первой неудачной загрузке с R2.
+    static func isR2Host(_ urlString: String) -> Bool {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let host = URL(string: trimmed)?.host?.lowercased() else { return false }
+        return host.contains(blockedHostToken)
+    }
+
+    static func isR2Host(_ url: URL) -> Bool {
+        isR2Host(url.absoluteString)
+    }
+}
+
+/// Подсказка включить VPN сразу после неудачной загрузки с R2 (fallback может идти параллельно по логике загрузчика; debounce против спама).
+enum PreviewMediaAccessNotifier {
+    private static let lock = NSLock()
+    private static var lastNotifiedAt: Date?
+    private static let minIntervalBetweenHints: TimeInterval = 90
+    private static let bannerDuration: TimeInterval = 10
+
+    static func notifyR2PrimaryLoadFailed(originalURL: String) {
+        guard PreviewMediaURLFallback.isR2Host(originalURL) else { return }
+
+        lock.lock()
+        let now = Date()
+        if let last = lastNotifiedAt, now.timeIntervalSince(last) < minIntervalBetweenHints {
+            lock.unlock()
+            return
+        }
+        lastNotifiedAt = now
+        lock.unlock()
+
+        DispatchQueue.main.async {
+            NotificationManager.shared.showInfo(
+                "preview_media_unreachable_vpn_hint".localized,
+                customDuration: Self.bannerDuration,
+                sizing: .fitContent
+            )
+        }
     }
 }
 
@@ -334,6 +374,9 @@ public class ImageDownloader: ImageDownloaderProtocol {
                         }
                         completion(.success(path))
                     case .failure(let error):
+                        if index == 0 {
+                            PreviewMediaAccessNotifier.notifyR2PrimaryLoadFailed(originalURL: url)
+                        }
                         if index + 1 < candidateURLs.count {
                             attemptDownload(at: index + 1)
                         } else {

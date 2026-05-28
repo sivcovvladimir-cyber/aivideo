@@ -750,6 +750,26 @@ class AdaptyService: ObservableObject {
 
     // MARK: - Partial Configuration Parsing
     
+    /// Парсит массив целых из JSON: Int/Double/NSNumber и строки (Adapty часто отдаёт `0` как NSNumber — `as? Int` его теряет).
+    private func parseIntArray(from value: Any?) -> [Int]? {
+        guard let raw = value as? [Any], !raw.isEmpty else { return nil }
+        var result: [Int] = []
+        result.reserveCapacity(raw.count)
+        for val in raw {
+            if let n = val as? Int {
+                result.append(n)
+            } else if let n = val as? NSNumber {
+                result.append(n.intValue)
+            } else if let n = val as? Double {
+                result.append(Int(n))
+            } else if let s = val as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let n = Int(t) { result.append(n) }
+            }
+        }
+        return result.isEmpty ? nil : result
+    }
+
     /// Парсит generationLimits из JSON: Int/Double/NSNumber и строки с целым числом (часто так сериализует Adapty/панели).
     private func parseGenerationLimits(from value: Any?) -> [String: Int]? {
         guard let dict = value as? [String: Any], !dict.isEmpty else { return nil }
@@ -767,15 +787,17 @@ class AdaptyService: ObservableObject {
         return result.isEmpty ? nil : result
     }
 
-    /// Накладывает `generationLimits` из сырого JSON (ключи `generationLimits` в корне и/или внутри `logic`) поверх decode.
+    /// Накладывает поля `logic` из сырого JSON поверх decode: `generationLimits`, `showRatingAfterGenerations` и `showRatingOnFirstHomeOpen`.
     private func mergingGenerationLimitsFromRawJSON(_ config: PaywallConfig, jsonData: Data) -> PaywallConfig {
         guard let root = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return config }
 
-        let fromRoot = parseGenerationLimits(from: root["generationLimits"])
         let logicObj = root["logic"] as? [String: Any]
-        let fromNestedLogic = parseGenerationLimits(from: logicObj?["generationLimits"])
+        var logic = config.logic
+        var didChange = false
 
-        let parsed: [String: Int]? = {
+        let fromRoot = parseGenerationLimits(from: root["generationLimits"])
+        let fromNestedLogic = parseGenerationLimits(from: logicObj?["generationLimits"])
+        let parsedLimits: [String: Int]? = {
             switch (fromRoot, fromNestedLogic) {
             case (nil, nil): return nil
             case (let a?, nil): return a
@@ -783,18 +805,59 @@ class AdaptyService: ObservableObject {
             case (let a?, let b?): return a.merging(b) { _, nested in nested }
             }
         }()
-        guard let parsed, !parsed.isEmpty else { return config }
-
-        let newLogic = config.logic.mergingGenerationLimitsOverlay(parsed)
-        if newLogic.generationLimits != config.logic.generationLimits {
-            print("[paywall] fetchPaywallConfig: logic.generationLimits overlay из raw JSON keys=\(parsed.keys.sorted())")
+        if let parsedLimits, !parsedLimits.isEmpty {
+            logic = logic.mergingGenerationLimitsOverlay(parsedLimits)
+            didChange = true
+            print("[paywall] fetchPaywallConfig: logic.generationLimits overlay из raw JSON keys=\(parsedLimits.keys.sorted())")
         }
+
+        if let ratingMilestones = parseIntArray(from: logicObj?["showRatingAfterGenerations"]), !ratingMilestones.isEmpty {
+            logic = PaywallConfig.LogicConfig(
+                showRatingAfterGenerations: ratingMilestones,
+                showRatingOnFirstHomeOpen: logic.showRatingOnFirstHomeOpen,
+                showPaywallAfterOnboarding: logic.showPaywallAfterOnboarding,
+                generationLimits: logic.generationLimits,
+                effectsCatalogAllowsMotionPreview: logic.effectsCatalogAllowsMotionPreview,
+                effectsCatalogShowPosterBeforeMotion: logic.effectsCatalogShowPosterBeforeMotion,
+                startingTokenBalance: logic.startingTokenBalance,
+                dailyTokenAllowance: logic.dailyTokenAllowance,
+                tokensPerEffectGeneration: logic.tokensPerEffectGeneration,
+                promptVideoTokensPerSecond: logic.promptVideoTokensPerSecond,
+                promptVideoAudioAddonTokens: logic.promptVideoAudioAddonTokens,
+                promptPhotoGenerationTokens: logic.promptPhotoGenerationTokens
+            )
+            didChange = true
+            print("[paywall] fetchPaywallConfig: logic.showRatingAfterGenerations overlay из raw JSON milestones=\(ratingMilestones)")
+        }
+
+        if let firstHomeRating = parseBooleanValue(from: logicObj ?? [:], key: "showRatingOnFirstHomeOpen")
+            ?? parseBooleanValue(from: logicObj ?? [:], key: "show_rating_on_first_home_open") {
+            logic = PaywallConfig.LogicConfig(
+                showRatingAfterGenerations: logic.showRatingAfterGenerations,
+                showRatingOnFirstHomeOpen: firstHomeRating,
+                showPaywallAfterOnboarding: logic.showPaywallAfterOnboarding,
+                generationLimits: logic.generationLimits,
+                effectsCatalogAllowsMotionPreview: logic.effectsCatalogAllowsMotionPreview,
+                effectsCatalogShowPosterBeforeMotion: logic.effectsCatalogShowPosterBeforeMotion,
+                startingTokenBalance: logic.startingTokenBalance,
+                dailyTokenAllowance: logic.dailyTokenAllowance,
+                tokensPerEffectGeneration: logic.tokensPerEffectGeneration,
+                promptVideoTokensPerSecond: logic.promptVideoTokensPerSecond,
+                promptVideoAudioAddonTokens: logic.promptVideoAudioAddonTokens,
+                promptPhotoGenerationTokens: logic.promptPhotoGenerationTokens
+            )
+            didChange = true
+            print("[paywall] fetchPaywallConfig: logic.showRatingOnFirstHomeOpen overlay из raw JSON = \(firstHomeRating)")
+        }
+
+        guard didChange else { return config }
+
         return PaywallConfig(
             planIds: config.planIds,
             purchasePlanIds: config.purchasePlanIds,
             trialsPlanIds: config.trialsPlanIds,
             adapty: config.adapty,
-            logic: newLogic
+            logic: logic
         )
     }
     
@@ -867,11 +930,10 @@ class AdaptyService: ObservableObject {
         let promptVideoTokensPerSecond = parseIntValue(from: json, keys: ["promptVideoTokensPerSecond", "prompt_video_tokens_per_second"])
         let promptVideoAudioAddonTokens = parseIntValue(from: json, keys: ["promptVideoAudioAddonTokens", "prompt_video_audio_addon_tokens"])
         let promptPhotoGenerationTokens = parseIntValue(from: json, keys: ["promptPhotoGenerationTokens", "prompt_photo_generation_tokens"])
-        let showRatingAfterGenerations: [Int]? = {
-            guard let raw = json["showRatingAfterGenerations"] as? [Any], !raw.isEmpty else { return nil }
-            let arr = raw.compactMap { $0 as? Int }
-            return arr.isEmpty ? nil : arr
-        }()
+        let showRatingAfterGenerations = parseIntArray(from: json["showRatingAfterGenerations"])
+        let showRatingOnFirstHomeOpen =
+            parseBooleanValue(from: json, key: "showRatingOnFirstHomeOpen")
+            ?? parseBooleanValue(from: json, key: "show_rating_on_first_home_open")
 
         // Парсим Boolean параметры - могут прийти как Bool или как Int (0/1)
         let showPaywallAfterOnboarding = parseBooleanValue(from: json, key: "showPaywallAfterOnboarding")
@@ -887,11 +949,14 @@ class AdaptyService: ObservableObject {
         print("  - showPaywallAfterOnboarding: \(String(describing: showPaywallAfterOnboarding))")
         print("  - effectsCatalogAllowsMotionPreview: \(String(describing: effectsCatalogAllowsMotionPreview))")
         print("  - effectsCatalogShowPosterBeforeMotion: \(String(describing: effectsCatalogShowPosterBeforeMotion))")
+        print("  - showRatingAfterGenerations: \(String(describing: showRatingAfterGenerations))")
+        print("  - showRatingOnFirstHomeOpen: \(String(describing: showRatingOnFirstHomeOpen))")
         print("  - token defaults: start=\(String(describing: startingTokenBalance)), daily=\(String(describing: dailyTokenAllowance)), effect=\(String(describing: tokensPerEffectGeneration)), videoSec=\(String(describing: promptVideoTokensPerSecond)), audio=\(String(describing: promptVideoAudioAddonTokens)), photo=\(String(describing: promptPhotoGenerationTokens))")
         print("  - весь JSON logic: \(String(describing: json))")
         
         return PaywallConfig.LogicConfig(
             showRatingAfterGenerations: showRatingAfterGenerations,
+            showRatingOnFirstHomeOpen: showRatingOnFirstHomeOpen,
             showPaywallAfterOnboarding: showPaywallAfterOnboarding,
             generationLimits: generationLimits,
             effectsCatalogAllowsMotionPreview: effectsCatalogAllowsMotionPreview,

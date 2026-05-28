@@ -59,6 +59,7 @@
 "camera_access_required" = "Serve l’accesso alla fotocamera per uno selfie. Attivalo in Impostazioni";
 "photo_library_access_required" = "Serve l’accesso alla libreria foto per caricare una foto. Attivalo in Impostazioni";
 "network_error" = "Errore di rete";
+"preview_media_unreachable_vpn_hint" = "Il server non è raggiungibile. Prova ad attivare la VPN.";
 "no_internet_connection" = "Nessuna connessione Internet. Controlla la rete e riprova";
 "retry" = "Riprova";
 "actions" = "Azioni";

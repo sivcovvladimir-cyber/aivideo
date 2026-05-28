@@ -102,6 +102,8 @@ struct PaywallConfig: Codable {
     struct LogicConfig: Codable {
         /// После каких по счёту успешных генераций показывать запрос оценки.
         let showRatingAfterGenerations: [Int]?
+        /// Показывать запрос оценки через 3 секунды после первого открытия Home (onboarding → home).
+        let showRatingOnFirstHomeOpen: Bool?
         /// Показывать ли paywall после завершения онбординга.
         let showPaywallAfterOnboarding: Bool?
         /// Лимиты генераций по продуктам (ключ — `vendorProductId`).
@@ -125,6 +127,7 @@ struct PaywallConfig: Codable {
 
         init(
             showRatingAfterGenerations: [Int]? = nil,
+            showRatingOnFirstHomeOpen: Bool? = nil,
             showPaywallAfterOnboarding: Bool? = nil,
             generationLimits: [String: Int]? = nil,
             effectsCatalogAllowsMotionPreview: Bool? = nil,
@@ -137,6 +140,7 @@ struct PaywallConfig: Codable {
             promptPhotoGenerationTokens: Int? = nil
         ) {
             self.showRatingAfterGenerations = showRatingAfterGenerations
+            self.showRatingOnFirstHomeOpen = showRatingOnFirstHomeOpen
             self.showPaywallAfterOnboarding = showPaywallAfterOnboarding
             self.generationLimits = generationLimits
             self.effectsCatalogAllowsMotionPreview = effectsCatalogAllowsMotionPreview
@@ -150,7 +154,8 @@ struct PaywallConfig: Codable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case showRatingAfterGenerations, showPaywallAfterOnboarding, generationLimits
+            case showRatingAfterGenerations, showRatingOnFirstHomeOpen, show_rating_on_first_home_open
+            case showPaywallAfterOnboarding, generationLimits
             case effectsCatalogAllowsMotionPreview, effects_catalog_allows_motion_preview
             case effectsCatalogShowPosterBeforeMotion, effects_catalog_show_poster_before_motion
             case startingTokenBalance, dailyTokenAllowance, tokensPerEffectGeneration
@@ -162,6 +167,9 @@ struct PaywallConfig: Codable {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             showRatingAfterGenerations = try c.decodeIfPresent([Int].self, forKey: .showRatingAfterGenerations)
+            showRatingOnFirstHomeOpen =
+                try c.decodeIfPresent(Bool.self, forKey: .showRatingOnFirstHomeOpen)
+                ?? c.decodeIfPresent(Bool.self, forKey: .show_rating_on_first_home_open)
             showPaywallAfterOnboarding = try c.decodeIfPresent(Bool.self, forKey: .showPaywallAfterOnboarding)
             generationLimits = try c.decodeIfPresent([String: Int].self, forKey: .generationLimits)
             effectsCatalogAllowsMotionPreview =
@@ -193,6 +201,7 @@ struct PaywallConfig: Codable {
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encodeIfPresent(showRatingAfterGenerations, forKey: .showRatingAfterGenerations)
+            try c.encodeIfPresent(showRatingOnFirstHomeOpen, forKey: .showRatingOnFirstHomeOpen)
             try c.encodeIfPresent(showPaywallAfterOnboarding, forKey: .showPaywallAfterOnboarding)
             try c.encodeIfPresent(generationLimits, forKey: .generationLimits)
             try c.encodeIfPresent(effectsCatalogAllowsMotionPreview, forKey: .effectsCatalogAllowsMotionPreview)
@@ -973,6 +982,7 @@ extension PaywallConfig.LogicConfig {
         }()
         return PaywallConfig.LogicConfig(
             showRatingAfterGenerations: remote.showRatingAfterGenerations ?? base.showRatingAfterGenerations,
+            showRatingOnFirstHomeOpen: remote.showRatingOnFirstHomeOpen ?? base.showRatingOnFirstHomeOpen,
             showPaywallAfterOnboarding: remote.showPaywallAfterOnboarding ?? base.showPaywallAfterOnboarding,
             generationLimits: mergedLimits,
             effectsCatalogAllowsMotionPreview: remote.effectsCatalogAllowsMotionPreview ?? base.effectsCatalogAllowsMotionPreview,
@@ -991,6 +1001,7 @@ extension PaywallConfig.LogicConfig {
         let merged = legacy.merging(generationLimits ?? [:]) { _, fromLogic in fromLogic }
         return PaywallConfig.LogicConfig(
             showRatingAfterGenerations: showRatingAfterGenerations,
+            showRatingOnFirstHomeOpen: showRatingOnFirstHomeOpen,
             showPaywallAfterOnboarding: showPaywallAfterOnboarding,
             generationLimits: merged.isEmpty ? nil : merged,
             effectsCatalogAllowsMotionPreview: effectsCatalogAllowsMotionPreview,
@@ -1009,6 +1020,7 @@ extension PaywallConfig.LogicConfig {
         let merged = (generationLimits ?? [:]).merging(overlay) { _, remote in remote }
         return PaywallConfig.LogicConfig(
             showRatingAfterGenerations: showRatingAfterGenerations,
+            showRatingOnFirstHomeOpen: showRatingOnFirstHomeOpen,
             showPaywallAfterOnboarding: showPaywallAfterOnboarding,
             generationLimits: merged.isEmpty ? nil : merged,
             effectsCatalogAllowsMotionPreview: effectsCatalogAllowsMotionPreview,

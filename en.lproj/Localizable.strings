@@ -97,6 +97,7 @@
 "camera_access_required" = "Camera access is required to take a selfie. Please enable it in Settings";
 "photo_library_access_required" = "Photo library access is required to upload a photo. Please enable it in Settings";
 "network_error" = "Network Error";
+"preview_media_unreachable_vpn_hint" = "The server seems unreachable. Try turning on VPN.";
 "no_internet_connection" = "No internet connection. Please check your connection and try again";
 "retry" = "Retry";
 "actions" = "Actions";

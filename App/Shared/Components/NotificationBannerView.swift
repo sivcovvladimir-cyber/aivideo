@@ -175,8 +175,8 @@ class NotificationManager: ObservableObject {
     }
     
     /// Показать информационное уведомление
-    func showInfo(_ message: String, customDuration: TimeInterval? = nil) {
-        showNotification(message, type: .info, customDuration: customDuration)
+    func showInfo(_ message: String, customDuration: TimeInterval? = nil, sizing: NotificationBannerSizing = .compact) {
+        showNotification(message, type: .info, customDuration: customDuration, sizing: sizing)
     }
     
     // MARK: - Private Methods

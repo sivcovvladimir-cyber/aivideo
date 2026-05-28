@@ -49,6 +49,15 @@ struct EffectsHomeView: View {
         return "home-hero|\(hero.sectionId)|\(heroCarouselIndex)"
     }
 
+    /// Перезапуск задачи показа рейтинга на Home при обновлении майлстоунов или флага первого открытия (Adapty overlay после cache-first).
+    private var homeOpenRatingPromptTaskToken: String {
+        let logic = paywallCache.paywallConfig?.logic
+        let milestones = logic?.showRatingAfterGenerations ?? []
+        let milestonesToken = milestones.map(String.init).joined(separator: ",")
+        let firstHomeFlagToken = logic?.showRatingOnFirstHomeOpen.map { $0 ? "1" : "0" } ?? "nil"
+        return "\(milestonesToken)|firstHome:\(firstHomeFlagToken)"
+    }
+
     /// Рельсы и «View all»: motion в карточках каталога; по умолчанию выключено в `logic`, Adapty может включить.
     private var effectsCatalogAllowsMotionPreview: Bool {
         paywallCache.paywallConfig?.logic.effectsCatalogAllowsMotionPreview ?? false
@@ -109,6 +118,9 @@ struct EffectsHomeView: View {
         .task(id: homeTailWarmupIdentity) {
             guard let payload else { return }
             await EffectsMediaOrchestrator.shared.reevaluateCatalogTailWarmupForHome(payload: payload)
+        }
+        .task(id: homeOpenRatingPromptTaskToken) {
+            await appState.scheduleRatingPromptOnHomeOpenIfNeeded()
         }
     }
 

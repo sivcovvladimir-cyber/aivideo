@@ -726,6 +726,7 @@ private struct DebugSystemSettingsSheet: View {
                 Section("Paywall") {
                     row("Placement tier", PaywallCacheManager.shared.currentPlacementTier.rawValue)
                     row("Show after onboarding", boolString(PaywallCacheManager.shared.paywallConfig?.logic.showPaywallAfterOnboarding))
+                    row("Show rating on first Home open", boolString(PaywallCacheManager.shared.paywallConfig?.logic.showRatingOnFirstHomeOpen))
                     row("Rating milestones", appState.showRatingAfterGenerations.map(String.init).joined(separator: ", "))
                 }
                 Section("Generations") {

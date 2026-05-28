@@ -56,6 +56,7 @@
 "camera_access_required" = "L’accès à la caméra est nécessaire pour prendre un selfie. Activez-le dans Réglages";
 "photo_library_access_required" = "L’accès à la photothèque est nécessaire pour envoyer une photo. Activez-le dans Réglages";
 "network_error" = "Erreur réseau";
+"preview_media_unreachable_vpn_hint" = "Le serveur semble inaccessible. Essayez le VPN.";
 "no_internet_connection" = "Pas de connexion Internet. Vérifiez votre connexion et réessayez";
 "retry" = "Réessayer";
 "actions" = "Actions";
