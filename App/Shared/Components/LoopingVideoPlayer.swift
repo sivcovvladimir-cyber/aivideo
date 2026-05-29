@@ -8,24 +8,28 @@ struct LoopingVideoPlayer: View {
     let playbackURL: URL?
     /// Громкость зацикленного asset (0…1, mix/volume); по умолчанию 0.07 (7%).
     let playbackVolume: Float
+    /// `false` — пауза (для стека превью, где видим только один слой).
+    let isPlaybackActive: Bool
 
     @State private var player: AVQueuePlayer?
     @State private var videoAspectRatio: CGFloat = 16.0/9.0
     @State private var playerLooper: AVPlayerLooper?
     @State private var currentVideoName: String = ""
 
-    init(videoName: String, videoExtension: String = "mp4", playbackVolume: Float = 0.07) {
+    init(videoName: String, videoExtension: String = "mp4", playbackVolume: Float = 0.07, isPlaybackActive: Bool = true) {
         self.videoName = videoName
         self.videoExtension = videoExtension
         self.playbackURL = nil
         self.playbackVolume = playbackVolume
+        self.isPlaybackActive = isPlaybackActive
     }
 
-    init(playbackURL: URL, playbackVolume: Float = 0.07) {
+    init(playbackURL: URL, playbackVolume: Float = 0.07, isPlaybackActive: Bool = true) {
         self.videoName = ""
         self.videoExtension = playbackURL.pathExtension.lowercased().isEmpty ? "mp4" : playbackURL.pathExtension.lowercased()
         self.playbackURL = playbackURL
         self.playbackVolume = playbackVolume
+        self.isPlaybackActive = isPlaybackActive
     }
 
     private var resolvedVideoURL: URL? {
@@ -53,6 +57,9 @@ struct LoopingVideoPlayer: View {
                     }
                     .onChange(of: playbackIdentity) { _, _ in
                         setupPlayer()
+                    }
+                    .onChange(of: isPlaybackActive) { _, active in
+                        applyPlaybackActive(active)
                     }
                     .allowsHitTesting(false) // Отключаем взаимодействие с плеером
             }
@@ -83,7 +90,7 @@ struct LoopingVideoPlayer: View {
         let v = min(1, max(0, playbackVolume))
         player?.isMuted = v < 0.0001
         player?.volume = v
-        player?.play()
+        applyPlaybackActive(isPlaybackActive)
         currentVideoName = playbackIdentity
 
         Task {
@@ -101,6 +108,15 @@ struct LoopingVideoPlayer: View {
                     }
                 }
             }
+        }
+    }
+
+    private func applyPlaybackActive(_ active: Bool) {
+        guard let player else { return }
+        if active {
+            player.play()
+        } else {
+            player.pause()
         }
     }
 

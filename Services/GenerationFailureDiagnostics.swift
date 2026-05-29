@@ -111,6 +111,7 @@ struct GenerationFailureDiagnostics {
                 "effect_preset_id": preset.id,
                 "effect_title": preset.title,
                 "template_id": jsonValue(preset.providerTemplateId),
+                "video_quality": preset.resolvedVideoQualityForGeneration(),
                 "local_image_path": path
             ]
         }

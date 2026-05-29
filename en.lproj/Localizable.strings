@@ -85,7 +85,7 @@
 "effects_very_hot_section" = "Very Hot";
 "effects_empty_title" = "No effects available";
 "effects_empty_subtitle" = "Check your connection and try again";
-"library_empty_title" = "No videos yet";
+"library_empty_title" = "Gallery is empty";
 "library_empty_subtitle" = "Generate your first AI video or photo\nand it will appear here";
 "library_empty_cta" = "Explore Effects";
 "your_gallery_is_empty" = "Your gallery is empty";
@@ -98,6 +98,7 @@
 "photo_library_access_required" = "Photo library access is required to upload a photo. Please enable it in Settings";
 "network_error" = "Network Error";
 "preview_media_unreachable_vpn_hint" = "The server seems unreachable. Try turning on VPN.";
+"supabase_unreachable_vpn_hint" = "Catalog is loading slowly. Try turning on VPN.";
 "no_internet_connection" = "No internet connection. Please check your connection and try again";
 "retry" = "Retry";
 "actions" = "Actions";

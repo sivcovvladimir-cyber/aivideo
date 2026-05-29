@@ -417,6 +417,7 @@ final class GenerationJobService: ObservableObject {
                 duration: duration,
                 audio: audioEnabled,
                 aspectRatio: aspectRatio,
+                quality: nil,
                 replyRef: replyRef
             ))
 
@@ -446,6 +447,7 @@ final class GenerationJobService: ObservableObject {
                 duration: preset.durationSeconds ?? 5,
                 audio: nil,
                 aspectRatio: preset.aspectRatio,
+                quality: preset.resolvedVideoQualityForGeneration(),
                 replyRef: replyRef
             ))
         }

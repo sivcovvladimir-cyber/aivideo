@@ -45,35 +45,6 @@ enum PreviewMediaURLFallback {
     }
 }
 
-/// Подсказка включить VPN сразу после неудачной загрузки с R2 (fallback может идти параллельно по логике загрузчика; debounce против спама).
-enum PreviewMediaAccessNotifier {
-    private static let lock = NSLock()
-    private static var lastNotifiedAt: Date?
-    private static let minIntervalBetweenHints: TimeInterval = 90
-    private static let bannerDuration: TimeInterval = 10
-
-    static func notifyR2PrimaryLoadFailed(originalURL: String) {
-        guard PreviewMediaURLFallback.isR2Host(originalURL) else { return }
-
-        lock.lock()
-        let now = Date()
-        if let last = lastNotifiedAt, now.timeIntervalSince(last) < minIntervalBetweenHints {
-            lock.unlock()
-            return
-        }
-        lastNotifiedAt = now
-        lock.unlock()
-
-        DispatchQueue.main.async {
-            NotificationManager.shared.showInfo(
-                "preview_media_unreachable_vpn_hint".localized,
-                customDuration: Self.bannerDuration,
-                sizing: .fitContent
-            )
-        }
-    }
-}
-
 /// Протокол для скачивания и кэширования изображений
 public protocol ImageDownloaderProtocol {
     /// Скачивает изображение по URL и сохраняет локально (`effectPreviewLogTag` — опциональные логи превью эффектов).
@@ -367,6 +338,9 @@ public class ImageDownloader: ImageDownloaderProtocol {
                 completion: { result in
                     switch result {
                     case .success(let path):
+                        if index == 0, PreviewMediaURLFallback.isR2Host(url) {
+                            PreviewMediaAccessNotifier.notifyR2PrimaryLoadSucceeded(originalURL: url)
+                        }
                         if candidate != url, let image = UIImage(contentsOfFile: path) {
                             warmOriginalKeys(with: image)
                             persistOriginalAliasIfNeeded(from: path)

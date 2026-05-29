@@ -127,6 +127,25 @@ struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @State private var currentPage = 0
 
+    /// Одна высота hero для всех шагов — иначе при смене видео layout «пружинит» (разный aspect ratio).
+    private var onboardingHeroFixedHeight: CGFloat {
+        let heights = pages.indices.map { pageIndex in
+            OnboardingHeroLayout.frameHeight(
+                forVideoURL: OnboardingHeroTopMedia.heroVideoPlaybackURL(forPage: pageIndex)
+            )
+        }
+        return heights.max() ?? OnboardingHeroLayout.frameHeight(forVideoURL: nil)
+    }
+
+    /// Следующий шаг без implicit SwiftUI-анимации layout/hero при смене `currentPage`.
+    private func advanceOnboardingPage() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            currentPage += 1
+        }
+    }
+
     /// Нижний скрим: те же stops, что всегда на онбординге; меняется только цвет (`bottomScrim` = black).
     private var onboardingBottomScrim: some View {
         let scrim = OnboardingVisual.bottomScrim
@@ -150,27 +169,36 @@ struct OnboardingView: View {
         OnboardingPage(title: "onboarding_step3_title".localized, description: "onboarding_step3_desc".localized)
     ]
 
-    /// Hero-видео onboarding по текущей странице; fallback на старые изображения, если видео недоступно.
+    /// Все hero-видео монтируются сразу; при «Далее» меняем только opacity/active — без `replaceCurrentItem` и flash первого кадра.
     @ViewBuilder
-    private func onboardingHeroMedia(pageIndex: Int) -> some View {
-        let videoURL = OnboardingHeroTopMedia.heroVideoPlaybackURL(forPage: pageIndex)
-        let height = OnboardingHeroLayout.frameHeight(forVideoURL: videoURL)
-        if let videoURL {
-            LoopingVideoPlayer(playbackURL: videoURL, playbackVolume: 0.1)
-                .frame(width: UIScreen.main.bounds.width, height: height)
-                .clipped()
-        } else {
-            let fallbackName = "Onboarding\(pageIndex + 1)"
-            GeometryReader { geo in
-                Image(fallbackName)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    .clipped()
+    private var onboardingHeroVideoStack: some View {
+        let height = onboardingHeroFixedHeight
+        ZStack {
+            ForEach(pages.indices, id: \.self) { pageIndex in
+                if let videoURL = OnboardingHeroTopMedia.heroVideoPlaybackURL(forPage: pageIndex) {
+                    LoopingVideoPlayer(
+                        playbackURL: videoURL,
+                        playbackVolume: 0.1,
+                        isPlaybackActive: currentPage == pageIndex
+                    )
+                    .id("onboarding-player-\(pageIndex)")
+                    .opacity(currentPage == pageIndex ? 1 : 0)
+                    .zIndex(currentPage == pageIndex ? 1 : 0)
+                    .allowsHitTesting(false)
+                } else if currentPage == pageIndex {
+                    let fallbackName = "Onboarding\(pageIndex + 1)"
+                    GeometryReader { geo in
+                        Image(fallbackName)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                            .clipped()
+                    }
+                }
             }
-            .frame(height: height)
-            .frame(maxWidth: .infinity)
         }
+        .frame(width: UIScreen.main.bounds.width, height: height)
+        .clipped()
     }
     
     var body: some View {
@@ -181,7 +209,7 @@ struct OnboardingView: View {
 
                 // Hero: без центрирования fill — иначе `scaledToFill` режет верх/низ симметрично и кажется, что верх «уехал» за экран.
                 VStack(spacing: 0) {
-                    onboardingHeroMedia(pageIndex: currentPage)
+                    onboardingHeroVideoStack
                     .mask(
                         LinearGradient(
                             gradient: Gradient(stops: [
@@ -198,6 +226,7 @@ struct OnboardingView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea(edges: .top)
+                .animation(.none, value: currentPage)
 
                 // Скрим под текст/кнопку — всегда тёмный fade (см. `onboardingBottomScrim`); сдвиг вниз синхронизирован с опусканием CTA.
                 VStack {
@@ -230,7 +259,7 @@ struct OnboardingView: View {
 
                         Button(action: {
                             if currentPage < pages.count - 1 {
-                                currentPage += 1
+                                advanceOnboardingPage()
                             } else {
                                 Task {
                                     await AppAnalyticsService.shared.reportOnboardingCompleted()
@@ -264,6 +293,7 @@ struct OnboardingView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(edges: .bottom)
+                .animation(.none, value: currentPage)
             }
             .background(OnboardingVisual.backdrop)
             .environment(\.colorScheme, .dark)

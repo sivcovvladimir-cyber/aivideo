@@ -70,7 +70,7 @@
 "effects_very_hot_section" = "Very Hot";
 "effects_empty_title" = "Эффекты недоступны";
 "effects_empty_subtitle" = "Проверьте соединение и попробуйте снова";
-"library_empty_title" = "Видео пока нет";
+"library_empty_title" = "Галерея пустая";
 "library_empty_subtitle" = "Сгенерируйте первое AI-видео или фото\nи оно появится здесь";
 "library_empty_cta" = "Открыть эффекты";
 "your_gallery_is_empty" = "Ваша галерея пуста";
@@ -83,6 +83,7 @@
 "photo_library_access_required" = "Для загрузки фото требуется доступ к галерее. Разрешите доступ в настройках";
 "network_error" = "Ошибка сети";
 "preview_media_unreachable_vpn_hint" = "Похоже, сервер недоступен. Попробуйте включить VPN.";
+"supabase_unreachable_vpn_hint" = "Каталог долго не загружается. Попробуйте включить VPN.";
 "no_internet_connection" = "Нет соединения с интернетом. Проверьте подключение и попробуйте снова";
 "retry" = "Повторить";
 "actions" = "Действия";

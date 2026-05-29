@@ -14,6 +14,8 @@ struct PixVerseCreateVideoRequest {
     let duration: Int
     let audio: Bool?
     let aspectRatio: String?
+    /// `quality` в теле POST (`720p`, `1080p`, …); `nil` → дефолт сервиса.
+    let quality: String?
     let replyRef: String
 }
 
@@ -181,7 +183,7 @@ final class PixVerseAPIService {
         var body: [String: Any] = [
             "prompt": payload.prompt,
             "duration": payload.duration,
-            "quality": defaultVideoQuality,
+            "quality": payload.quality ?? defaultVideoQuality,
             "replyRef": payload.replyRef,
             "maxJobs": maxJobs,
             "off_peak_mode": false

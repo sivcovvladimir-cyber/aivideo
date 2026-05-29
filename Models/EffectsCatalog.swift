@@ -14,6 +14,8 @@ struct EffectPreset: Identifiable, Codable, Equatable {
     let isProOnly: Bool
     /// Соотношение для превью/выхода (переопределение над группой); строка `w:h`, например `9:16`.
     let aspectRatio: String?
+    /// Качество видео для effect-генерации (`quality` в API): `720p`, `1080p` и т.д.; `nil` → дефолт приложения.
+    let videoQuality: String?
     let durationSeconds: Int?
     let previewImageURL: URL?
     let previewVideoURL: URL?
@@ -32,6 +34,13 @@ struct EffectPreset: Identifiable, Codable, Equatable {
         return w / h
     }
 
+    /// Значение `quality` для POST videos/create: из БД или дефолт `720p`.
+    func resolvedVideoQualityForGeneration(defaultQuality: String = "720p") -> String {
+        let trimmed = videoQuality?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return defaultQuality }
+        return trimmed
+    }
+
     /// В `get_effects_home` у элементов hero часто нет `preview_image` / `preview_video`, хотя в секциях тот же `id` уже с полными URL — подставляем только отсутствующие поля.
     func fillingPreviewMediaIfMissing(fromSameIdFallback fallback: EffectPreset?) -> EffectPreset {
         guard let fallback, fallback.id == id else { return self }
@@ -46,6 +55,7 @@ struct EffectPreset: Identifiable, Codable, Equatable {
             tokenCost: tokenCost,
             isProOnly: isProOnly,
             aspectRatio: aspectRatio,
+            videoQuality: videoQuality ?? fallback.videoQuality,
             durationSeconds: durationSeconds,
             previewImageURL: previewImageURL ?? fallback.previewImageURL,
             previewVideoURL: previewVideoURL ?? fallback.previewVideoURL

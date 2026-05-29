@@ -1409,7 +1409,13 @@ actor EffectPreviewVideoDiskCache {
             ? EffectPreviewPrimaryR2AttemptPolicy.motionVideoDownloadTimeoutSeconds
             : nil
         do {
-            return try await performDownload(from: remoteURL, to: destinationURL, timeout: primaryTimeout)
+            let file = try await performDownload(from: remoteURL, to: destinationURL, timeout: primaryTimeout)
+            if PreviewMediaURLFallback.isR2Host(remoteURL) {
+                await MainActor.run {
+                    PreviewMediaAccessNotifier.notifyR2PrimaryLoadSucceeded(originalURL: remoteURL.absoluteString)
+                }
+            }
+            return file
         } catch {
             if PreviewMediaURLFallback.isR2Host(remoteURL) {
                 PreviewMediaAccessNotifier.notifyR2PrimaryLoadFailed(originalURL: remoteURL.absoluteString)

@@ -54,6 +54,15 @@ final class AppState: ObservableObject {
     private var onboardingHomeWarmupTask: Task<Void, Never>?
     private var hasHandledFirstDidBecomeActive = false
 
+    private static let supabaseBootstrapBannerSlot = "connectivity.supabase.bootstrap"
+
+    private static var showsRegionalConnectivityHints: Bool {
+        if #available(iOS 16, *) {
+            return Locale.current.region?.identifier.uppercased() == "RU"
+        }
+        return (Locale.current.regionCode ?? "").uppercased() == "RU"
+    }
+
     /// Один полёт на запуск приложения; повторные вызовы ждут тот же `Task`.
     func ensureSessionRemoteDataAtLaunch() async {
         if case .ready = sessionRemoteBootstrapPhase { return }
@@ -64,10 +73,24 @@ final class AppState: ObservableObject {
         let task = Task { @MainActor in
             defer { self.sessionBootstrapTask = nil }
             self.sessionRemoteBootstrapPhase = .loading
+
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if case .ready = self.sessionRemoteBootstrapPhase { return }
+                guard self.sessionEffectsHomePayload == nil, Self.showsRegionalConnectivityHints else { return }
+                FullWidthTopBannerCoordinator.shared.showInfo(
+                    id: Self.supabaseBootstrapBannerSlot,
+                    message: "supabase_unreachable_vpn_hint".localized,
+                    maxAutoHideDuration: nil,
+                    priority: 10
+                )
+            }
+
             do {
                 let payload = try await SupabaseSessionBootstrap.loadSessionSnapshot()
                 self.sessionEffectsHomePayload = payload
                 self.sessionRemoteBootstrapPhase = .ready
+                FullWidthTopBannerCoordinator.shared.dismiss(id: Self.supabaseBootstrapBannerSlot)
                 try? EffectsHomePayloadDiskCache.save(payload)
             } catch {
                 if self.sessionEffectsHomePayload == nil {
@@ -75,6 +98,7 @@ final class AppState: ObservableObject {
                 } else {
                     // Ошибка фонового обновления при уже показанном кэше — оставляем последний успешный снимок.
                     self.sessionRemoteBootstrapPhase = .ready
+                    FullWidthTopBannerCoordinator.shared.dismiss(id: Self.supabaseBootstrapBannerSlot)
                 }
             }
         }

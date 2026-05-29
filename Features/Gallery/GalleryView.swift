@@ -607,7 +607,7 @@ struct GalleryView: View {
 
                     Text("library_empty_subtitle".localized)
                         .font(AppTheme.Typography.body)
-                        .foregroundColor(AppTheme.Colors.textSecondary)
+                        .foregroundColor(AppTheme.Colors.textPrimary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                 }
@@ -635,7 +635,7 @@ struct GalleryView: View {
         .padding(.bottom, 100)
     }
 
-    /// Еле заметные квадраты 1:1 с тем же cardWidth, что и у MasonryGrid; фон на всю высоту области под шапкой.
+    /// Еле заметные плитки 2:3 (ширина:высота), тот же cardWidth что у MasonryGrid; фон на всю высоту под шапкой.
     private var emptyGalleryBackgroundSkeleton: some View {
         GeometryReader { geo in
             let w = geo.size.width
@@ -643,7 +643,9 @@ struct GalleryView: View {
             let spacing: CGFloat = 12
             let columns = 2
             let cardWidth = max(50, (w - CGFloat(columns + 1) * spacing) / CGFloat(columns))
-            let rowStride = cardWidth + spacing
+            let aspectWidthOverHeight: CGFloat = 2.0 / 3.0
+            let cardHeight = cardWidth / aspectWidthOverHeight
+            let rowStride = cardHeight + spacing
             let rowCount = max(
                 8,
                 Int(ceil((h + spacing) / rowStride)) + 2
@@ -654,7 +656,7 @@ struct GalleryView: View {
                     ForEach(0..<columns, id: \.self) { _ in
                         VStack(spacing: spacing) {
                             ForEach(0..<rowCount, id: \.self) { _ in
-                                emptyMockSquareTile(side: cardWidth)
+                                emptyMockTile(width: cardWidth, height: cardHeight)
                             }
                         }
                     }
@@ -693,10 +695,10 @@ struct GalleryView: View {
         }
     }
 
-    private func emptyMockSquareTile(side: CGFloat) -> some View {
+    private func emptyMockTile(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(emptyMockTileFill)
-            .frame(width: side, height: side)
+            .frame(width: width, height: height)
     }
 }
 

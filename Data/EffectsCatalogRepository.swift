@@ -84,6 +84,7 @@ final class MockEffectsCatalogRepository: EffectsCatalogRepository {
             tokenCost: nil,
             isProOnly: isProOnly,
             aspectRatio: "9:16",
+            videoQuality: nil,
             durationSeconds: nil,
             previewImageURL: nil,
             previewVideoURL: nil

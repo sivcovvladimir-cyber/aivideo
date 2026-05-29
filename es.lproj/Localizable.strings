@@ -44,7 +44,7 @@
 "effects_very_hot_section" = "Very Hot";
 "effects_empty_title" = "No effects available";
 "effects_empty_subtitle" = "Check your connection and try again";
-"library_empty_title" = "No videos yet";
+"library_empty_title" = "La galería está vacía";
 "library_empty_subtitle" = "Generate your first AI video or photo\nand it will appear here";
 "library_empty_cta" = "Explore Effects";
 "your_gallery_is_empty" = "Tu galería está vacía";
@@ -57,6 +57,7 @@
 "photo_library_access_required" = "Se necesita acceso a la fototeca para subir una foto. Actívalo en Ajustes";
 "network_error" = "Error de red";
 "preview_media_unreachable_vpn_hint" = "El servidor no responde. Prueba activar VPN.";
+"supabase_unreachable_vpn_hint" = "El catálogo tarda en cargar. Prueba activar VPN.";
 "no_internet_connection" = "Sin conexión a internet. Comprueba la conexión e inténtalo de nuevo";
 "retry" = "Reintentar";
 "actions" = "Acciones";

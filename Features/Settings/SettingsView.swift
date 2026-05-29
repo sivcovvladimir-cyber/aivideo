@@ -25,9 +25,9 @@ private enum SettingsVersionRevealLayout {
     /// Нижний `contentInset` у `UIScrollView`: место под капсулу таббара (как на главной/галерее).
     static let tabBarScrollClearance: CGFloat = 88
     /// В покое строка версии сильнее утоплена за нижний край.
-    static let versionRestDownwardOffset: CGFloat = 86
+    static let versionRestDownwardOffset: CGFloat = 72
     /// Мёртвая зона для лёгкой пружины у нижней границы: до этого порога версия полностью скрыта.
-    static let revealStartRubberThreshold: CGFloat = 36
+    static let revealStartRubberThreshold: CGFloat = 30
     static let opacityRubberDivisor: CGFloat = 12
     /// Небольшой зазор в контенте над inset (не «километр»).
     static let contentTailAboveTabBar: CGFloat = 2
@@ -43,6 +43,7 @@ struct SettingsView: View {
     @State private var alertMessage = ""
     @State private var showLanguageSelector = false
     @State private var showDebugSystemSettings = false
+    @State private var showDebugTopBannerTest = false
     @State private var showClearGalleryConfirmation = false
     /// Размер папки локальной галереи (`GeneratedImages`); справа у «Очистить галерею», как у языка.
     @State private var galleryFolderSizeLabel: String = "…"
@@ -371,6 +372,14 @@ struct SettingsView: View {
                                     }
                                 )
 
+                                SettingItem(
+                                    systemName: "rectangle.topthird.inset.filled",
+                                    title: "Test Top Banner",
+                                    action: {
+                                        showDebugTopBannerTest = true
+                                    }
+                                )
+
                                 // PRO Status Toggle
                                 HStack(spacing: 20) {
                                     // Icon
@@ -486,17 +495,7 @@ struct SettingsView: View {
             .overlay(alignment: .bottom) {
                 ZStack(alignment: .bottom) {
                     // Сначала версия (ниже по z-order), затем таббар — при bounce строка не перекрывает капсулу, остаётся визуально под ней.
-                    let revealRubber = max(0, settingsScrollBottomRubberband - SettingsVersionRevealLayout.revealStartRubberThreshold)
-                    Text("v \(bundleShortVersion)")
-                        .font(.footnote)
-                        .foregroundColor(AppTheme.Colors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 6)
-                        .transaction { $0.animation = nil }
-                        .offset(y: SettingsVersionRevealLayout.versionRestDownwardOffset - revealRubber)
-                        .opacity(min(1, revealRubber / SettingsVersionRevealLayout.opacityRubberDivisor))
-                        .allowsHitTesting(false)
+                    hiddenVersionLabel
                     BottomNavigationBar()
                 }
             }
@@ -542,6 +541,9 @@ struct SettingsView: View {
         .sheet(isPresented: $showDebugSystemSettings) {
             DebugSystemSettingsSheet(appState: appState, tokenBalance: tokenWallet.balance)
         }
+        .sheet(isPresented: $showDebugTopBannerTest) {
+            DebugTopBannerTestSheet()
+        }
     }
     
     // MARK: - Helper Methods
@@ -549,6 +551,28 @@ struct SettingsView: View {
     @State private var contactMessageDraft = ""
     @State private var contactEmailDraft = ""
     @State private var isSendingContact = false
+
+    /// Версия в покое утоплена за нижний край; плавно проявляется только на ощутимой нижней оттяжке (как в storecards).
+    private var hiddenVersionLabel: some View {
+        let revealRubber = max(
+            0,
+            settingsScrollBottomRubberband - SettingsVersionRevealLayout.revealStartRubberThreshold
+        )
+        let revealOpacity = revealRubber < 4
+            ? 0
+            : min(1, revealRubber / SettingsVersionRevealLayout.opacityRubberDivisor)
+
+        return Text("v \(bundleShortVersion)")
+            .font(.footnote)
+            .foregroundColor(AppTheme.Colors.textSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 6)
+            .transaction { $0.animation = nil }
+            .offset(y: SettingsVersionRevealLayout.versionRestDownwardOffset - revealRubber)
+            .opacity(revealOpacity)
+            .allowsHitTesting(false)
+    }
     
     private func openTermsOfService() {
         if let urlString = ConfigurationManager.shared.getValue(for: .termsOfServiceURL),
@@ -768,6 +792,103 @@ private struct DebugSystemSettingsSheet: View {
     private func boolString(_ value: Bool?) -> String {
         guard let value else { return "nil" }
         return value ? "true" : "false"
+    }
+}
+
+/// Debug: проверка sticky full-width баннера (info / error / success, max-таймер, tap dismiss).
+private struct DebugTopBannerTestSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Slot {
+        static let info = "debug.topBanner.info"
+        static let error = "debug.topBanner.error"
+        static let success = "debug.topBanner.success"
+        static let sticky = "debug.topBanner.sticky"
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    Text("Tap the banner to dismiss all active slots immediately.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+
+                Section("Auto-hide (max duration)") {
+                    Button("Info — blue, 10 s") {
+                        FullWidthTopBannerCoordinator.shared.showInfo(
+                            id: Slot.info,
+                            message: "Debug info banner. Tap to dismiss.",
+                            maxAutoHideDuration: 10,
+                            priority: 1
+                        )
+                    }
+                    Button("Error — red, 5 s") {
+                        FullWidthTopBannerCoordinator.shared.showError(
+                            id: Slot.error,
+                            message: "Debug error banner. Tap to dismiss.",
+                            maxAutoHideDuration: 5,
+                            priority: 2
+                        )
+                    }
+                    Button("Success — green, 3 s") {
+                        FullWidthTopBannerCoordinator.shared.showSuccess(
+                            id: Slot.success,
+                            message: "Debug success banner. Tap to dismiss.",
+                            maxAutoHideDuration: 3,
+                            priority: 3
+                        )
+                    }
+                }
+
+                Section("Sticky (until tap or dismiss slot)") {
+                    Button("Sticky info — no max timer") {
+                        FullWidthTopBannerCoordinator.shared.showInfo(
+                            id: Slot.sticky,
+                            message: "Sticky banner until tap or recovery dismiss.",
+                            maxAutoHideDuration: nil,
+                            priority: 10
+                        )
+                    }
+                    Button("Dismiss sticky slot") {
+                        FullWidthTopBannerCoordinator.shared.dismiss(id: Slot.sticky)
+                    }
+                }
+
+                Section("All slots") {
+                    Button("Show all three styles at once") {
+                        FullWidthTopBannerCoordinator.shared.showInfo(
+                            id: Slot.info,
+                            message: "Info slot (priority 1)",
+                            maxAutoHideDuration: 15,
+                            priority: 1
+                        )
+                        FullWidthTopBannerCoordinator.shared.showError(
+                            id: Slot.error,
+                            message: "Error slot (priority 2)",
+                            maxAutoHideDuration: 15,
+                            priority: 2
+                        )
+                        FullWidthTopBannerCoordinator.shared.showSuccess(
+                            id: Slot.success,
+                            message: "Success slot (priority 3) — visible on top",
+                            maxAutoHideDuration: 15,
+                            priority: 3
+                        )
+                    }
+                    Button("Dismiss all", role: .destructive) {
+                        FullWidthTopBannerCoordinator.shared.dismissAll()
+                    }
+                }
+            }
+            .navigationTitle("Test Top Banner")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
