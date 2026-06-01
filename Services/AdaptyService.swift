@@ -125,10 +125,8 @@ class AdaptyService: ObservableObject {
                 
                 switch result {
                 case .success(let profile):
-                    self?.profile = profile
-                    self?.updateProStatus(from: profile)
+                    self?.applyProfileUpdate(profile)
 
-                    
                 case .failure(let error):
                     self?.error = error.localizedDescription
                     print("🚨 [AdaptyService] Ошибка получения профиля: \(error)")
@@ -153,6 +151,21 @@ class AdaptyService: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// Единая точка применения профиля Adapty: PRO-статус, renew/refund токенов, снимок профиля в AppMetrica.
+    func applyProfileUpdate(_ profile: AdaptyProfile) {
+        self.profile = profile
+        updateProStatus(from: profile)
+        PurchaseTokenLedgerService.shared.sync(with: profile)
+        syncAppMetricaUserProfile()
+    }
+
+    /// Adapty id в custom `adapty_profile_id`, без смены AppMetrica ProfileId (сохраняем цепочку событий на device-профиле).
+    private func syncAppMetricaUserProfile() {
+        Task { @MainActor in
+            AppState.shared.refreshAnalyticsUserProfile()
+        }
     }
 
     /// Обновить статус PRO пользователя на основе профиля. В Debug-режиме при включённом «PRO» перезапись не делаем.
@@ -239,8 +252,7 @@ class AdaptyService: ObservableObject {
                 guard let self = self else { return }
                 switch profileResult {
                 case .success(let profile):
-                    self.profile = profile
-                    self.updateProStatus(from: profile)
+                    self.applyProfileUpdate(profile)
 
                     if self.purchaseReflectsInProfile(profile, vendorProductId: product.vendorProductId) {
                         Task {
@@ -335,8 +347,7 @@ class AdaptyService: ObservableObject {
                         return
                     case .success(let profile, _):
                         self.invalidatePaywallCache()
-                        self.profile = profile
-                        self.updateProStatus(from: profile)
+                        self.applyProfileUpdate(profile)
 
                         if self.purchaseReflectsInProfile(profile, vendorProductId: product.vendorProductId) {
                             Task {
@@ -381,8 +392,7 @@ class AdaptyService: ObservableObject {
                 
                 switch result {
                 case .success(let profile):
-                    self.profile = profile
-                    self.updateProStatus(from: profile)
+                    self.applyProfileUpdate(profile)
                     if self.profileIndicatesProAccess(profile) {
                         print("[paywall] AdaptyService.restorePurchases: success premiumActive=true")
                         completion(.success(profile))
@@ -415,8 +425,7 @@ class AdaptyService: ObservableObject {
                 guard let self = self else { return }
                 switch profileResult {
                 case .success(let profile):
-                    self.profile = profile
-                    self.updateProStatus(from: profile)
+                    self.applyProfileUpdate(profile)
                     if self.profileIndicatesProAccess(profile) {
                         completion(.success(profile))
                         return

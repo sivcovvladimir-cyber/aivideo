@@ -30,6 +30,7 @@
 		FA6E000D2F1000010000000D /* PaywallPlacementTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E000E2F1000010000000E /* PaywallPlacementTier.swift */; };
 		FA6E00102F10000100000010 /* EffectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00112F10000100000011 /* EffectDetailView.swift */; };
 		FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00132F10000100000013 /* TokenWalletService.swift */; };
+		FA6E00602F10000100000060 /* PurchaseTokenLedgerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00612F10000100000061 /* PurchaseTokenLedgerService.swift */; };
 		FA6E00142F10000100000014 /* PixVerseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00152F10000100000015 /* PixVerseAPIService.swift */; };
 		FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00172F10000100000017 /* GenerationJobService.swift */; };
 		FA6E00182F10000100000018 /* GenerationProgressOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */; };
@@ -74,7 +75,7 @@
 		FA89A8882E34D8B100F5A9F6 /* IconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8872E34D8B100F5A9F6 /* IconView.swift */; };
 		FA89A8C12E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C02E364E8000F5A9F6 /* EdgeSwipeDismissModifier.swift */; };
 		FA89A8C32E37A38000F5A9F6 /* ContactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89A8C22E37A38000F5A9F6 /* ContactService.swift */; };
-		FA8A8F6D2E439E720091D637 /* YandexMobileMetrica in Frameworks */ = {isa = PBXBuildFile; productRef = FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */; };
+		FA8A8F6D2E439E720091D637 /* AppMetricaCore in Frameworks */ = {isa = PBXBuildFile; productRef = FA8A8F6C2E439E720091D637 /* AppMetricaCore */; };
 		FA8A8F712E43A83E0091D637 /* AppAnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8A8F702E43A83E0091D637 /* AppAnalyticsService.swift */; };
 		FA9501922E2EA993001E9F2E /* PaywallConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501912E2EA993001E9F2E /* PaywallConfig.swift */; };
 		FA9501952E2EB536001E9F2E /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA9501942E2EB536001E9F2E /* AppTheme.swift */; };
@@ -84,7 +85,6 @@
 		FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01032F70000100D00003 /* SDWebImageWebPCoder */; };
 		FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = FA9D01042F70000100D00004 /* SDWebImage */; };
 		FAC32DEE2E3E05CC00D84786 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC32DED2E3E05CC00D84786 /* KeychainService.swift */; };
-		FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */ = {isa = PBXBuildFile; productRef = FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */; };
 		FAD424092F5EF0C600EFC0D7 /* AdServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAD424082F5EF0C600EFC0D7 /* AdServices.framework */; };
 		FAD653332E0C8CE50030B880 /* Adapty in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653322E0C8CE50030B880 /* Adapty */; };
 		FAD653352E0C8CE50030B880 /* AdaptyPlugin in Frameworks */ = {isa = PBXBuildFile; productRef = FAD653342E0C8CE50030B880 /* AdaptyPlugin */; };
@@ -134,6 +134,7 @@
 		FA6E000E2F1000010000000E /* PaywallPlacementTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallPlacementTier.swift; sourceTree = "<group>"; };
 		FA6E00112F10000100000011 /* EffectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectDetailView.swift; sourceTree = "<group>"; };
 		FA6E00132F10000100000013 /* TokenWalletService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenWalletService.swift; sourceTree = "<group>"; };
+		FA6E00612F10000100000061 /* PurchaseTokenLedgerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PurchaseTokenLedgerService.swift; sourceTree = "<group>"; };
 		FA6E00152F10000100000015 /* PixVerseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixVerseAPIService.swift; sourceTree = "<group>"; };
 		FA6E00172F10000100000017 /* GenerationJobService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationJobService.swift; sourceTree = "<group>"; };
 		FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationProgressOverlayView.swift; sourceTree = "<group>"; };
@@ -291,8 +292,7 @@
 				FAD6533B2E0C8D0B0030B880 /* FirebaseAnalytics in Frameworks */,
 				FAD6533D2E0C8D0B0030B880 /* FirebaseCrashlytics in Frameworks */,
 				FAD653372E0C8CE50030B880 /* AdaptyUI in Frameworks */,
-				FA8A8F6D2E439E720091D637 /* YandexMobileMetrica in Frameworks */,
-				FAC6533E2E0C8D0B0030B880 /* YandexMobileMetricaCrashes in Frameworks */,
+				FA8A8F6D2E439E720091D637 /* AppMetricaCore in Frameworks */,
 				FA9D01082F70000100D00008 /* SDWebImageSwiftUI in Frameworks */,
 				FA9D01092F70000100D00009 /* SDWebImageWebPCoder in Frameworks */,
 				FA9D010A2F70000100D0000A /* SDWebImage in Frameworks */,
@@ -324,6 +324,7 @@
 				FA6E00512F10000100000051 /* GenerationFailureDiagnostics.swift */,
 				FAC32DED2E3E05CC00D84786 /* KeychainService.swift */,
 				FA6E00132F10000100000013 /* TokenWalletService.swift */,
+				FA6E00612F10000100000061 /* PurchaseTokenLedgerService.swift */,
 				FA95019A2E2EDEC0001E9F2E /* RateService.swift */,
 				FA4106002E15B84800CCA9CF /* DeleteService.swift */,
 				FA4106012E15B84800CCA9CF /* DownloadService.swift */,
@@ -728,8 +729,7 @@
 				FAD653362E0C8CE50030B880 /* AdaptyUI */,
 				FAD6533A2E0C8D0B0030B880 /* FirebaseAnalytics */,
 				FAD6533C2E0C8D0B0030B880 /* FirebaseCrashlytics */,
-				FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */,
-				FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */,
+				FA8A8F6C2E439E720091D637 /* AppMetricaCore */,
 				FA9D01022F70000100D00002 /* SDWebImageSwiftUI */,
 				FA9D01032F70000100D00003 /* SDWebImageWebPCoder */,
 				FA9D01042F70000100D00004 /* SDWebImage */,
@@ -771,7 +771,7 @@
 			packageReferences = (
 				FAF17B122E0AF7E300A34D7E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				FAF17B1E2E0AF93C00A34D7E /* XCRemoteSwiftPackageReference "AdaptySDK-iOS" */,
-				FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */,
+				FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "appmetrica-sdk-ios" */,
 				FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */,
 				FA9D01062F70000100D00006 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
 				FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */,
@@ -882,6 +882,7 @@
 				FA6E00072F10000100000007 /* GenerationCostCalculator.swift in Sources */,
 				FA6E000D2F1000010000000D /* PaywallPlacementTier.swift in Sources */,
 				FA6E00122F10000100000012 /* TokenWalletService.swift in Sources */,
+				FA6E00602F10000100000060 /* PurchaseTokenLedgerService.swift in Sources */,
 				FA6E00162F10000100000016 /* GenerationJobService.swift in Sources */,
 				FA6E00502F10000100000050 /* GenerationFailureDiagnostics.swift in Sources */,
 				FA6E00202F20000100000020 /* FullWidthTopBannerCoordinator.swift in Sources */,
@@ -1040,7 +1041,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1069,7 +1070,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1092,7 +1093,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1121,7 +1122,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1283,12 +1284,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */ = {
+		FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "appmetrica-sdk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/yandexmobile/metrica-sdk-ios";
+			repositoryURL = "https://github.com/appmetrica/appmetrica-sdk-ios";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 4.5.2;
+				minimumVersion = 6.0.0;
 			};
 		};
 		FA9D01052F70000100D00005 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */ = {
@@ -1334,10 +1335,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		FA8A8F6C2E439E720091D637 /* YandexMobileMetrica */ = {
+		FA8A8F6C2E439E720091D637 /* AppMetricaCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
-			productName = YandexMobileMetrica;
+			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "appmetrica-sdk-ios" */;
+			productName = AppMetricaCore;
 		};
 		FA9D01022F70000100D00002 /* SDWebImageSwiftUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1353,11 +1354,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FA9D01072F70000100D00007 /* XCRemoteSwiftPackageReference "SDWebImage" */;
 			productName = SDWebImage;
-		};
-		FAC6533F2E0C8D0B0030B880 /* YandexMobileMetricaCrashes */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FA8A8F6B2E439E720091D637 /* XCRemoteSwiftPackageReference "metrica-sdk-ios" */;
-			productName = YandexMobileMetricaCrashes;
 		};
 		FAD653322E0C8CE50030B880 /* Adapty */ = {
 			isa = XCSwiftPackageProductDependency;

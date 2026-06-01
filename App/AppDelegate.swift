@@ -30,6 +30,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
         do {
             let adaptyKey = try ConfigurationManager.shared.getRequiredValue(for: .adaptyPublicKey)
             Adapty.activate(adaptyKey)
+            Adapty.delegate = self
             
             // Проверяем статус подписки при запуске
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -214,10 +215,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppsFlyerLibDelegate {
             AppState.shared.handleMemoryWarning()
         }
     }
-    
+}
 
-    
+// MARK: - AdaptyDelegate
 
-    
-
-} 
+extension AppDelegate: AdaptyDelegate {
+    nonisolated func didLoadLatestProfile(_ profile: AdaptyProfile) {
+        Task { @MainActor in
+            AdaptyService.shared.applyProfileUpdate(profile)
+        }
+    }
+}

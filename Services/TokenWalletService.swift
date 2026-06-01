@@ -74,6 +74,13 @@ final class TokenWalletService: ObservableObject {
         persist(balance: balance + max(0, amount), refreshDay: lastRefreshDay, initialized: true)
     }
 
+    /// Списывает купленные токены при refund; баланс не уходит ниже нуля.
+    func clawBack(_ amount: Int) {
+        syncWithCurrentConfig()
+        let normalized = max(0, amount)
+        persist(balance: max(0, balance - normalized), refreshDay: lastRefreshDay, initialized: true)
+    }
+
     func resetForDebug() {
         keychain.resetTokenWallet()
         syncWithCurrentConfig()

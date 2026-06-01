@@ -1,9 +1,5 @@
 import Foundation
-import YandexMobileMetrica
-#if canImport(YandexMobileMetricaCrashes)
-// Бинарный модуль крашей обязателен, если в `YMMYandexMetricaConfiguration` включён crashReporting (по умолчанию YES); иначе SDK шлёт «framework not found».
-import YandexMobileMetricaCrashes
-#endif
+import AppMetricaCore
 import FirebaseCore
 import FirebaseAnalytics
 import FirebaseCrashlytics
@@ -94,20 +90,18 @@ class AppAnalyticsService {
             print("❌ [AppAnalytics] AppMetrica API key not found")
             return
         }
-        
-        let configuration = YMMYandexMetricaConfiguration(apiKey: apiKey)
-        #if DEBUG
-        configuration?.logs = true
-        #endif
-        
-        if let config = configuration {
-            // Явно оставляем дефолт YES: без линковки `YandexMobileMetricaCrashes` в таргет отправка ошибок/крашей не работает.
-            config.crashReporting = true
-            YMMYandexMetrica.activate(with: config)
-            print("✅ [AppAnalytics] AppMetrica initialized with API key: \(apiKey)")
-        } else {
+
+        guard let configuration = AppMetricaConfiguration(apiKey: apiKey) else {
             print("❌ [AppAnalytics] Failed to create AppMetrica configuration")
+            return
         }
+
+        #if DEBUG
+        configuration.areLogsEnabled = true
+        #endif
+
+        AppMetrica.activate(with: configuration)
+        print("✅ [AppAnalytics] AppMetrica initialized with API key: \(apiKey)")
     }
     
     /// Приводит Apple App ID к виду «только цифры» (в письмах часто пишут id6760…; в SDK нужен числовой id).
@@ -266,11 +260,7 @@ class AppAnalyticsService {
     @MainActor
     func setUserID(_ userID: String) async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                YMMYandexMetrica.setUserProfileID(userID)
-                print("✅ [AppAnalytics] AppMetrica User ID set: \(userID)")
-            }
-            
+            // AppMetrica: встроенный ProfileId не меняем (см. reportUserProfileSnapshot / adapty_profile_id).
             group.addTask {
                 Analytics.setUserID(userID)
                 print("✅ [AppAnalytics] Firebase User ID set: \(userID)")
@@ -318,10 +308,17 @@ class AppAnalyticsService {
         await withTaskGroup(of: Void.self) { group in
             // AppMetrica Revenue
             group.addTask {
-                let revenue = YMMRevenueInfo(priceDecimal: NSDecimalNumber(value: price), currency: currency)
-                // Note: productID is read-only in YMMRevenueInfo, we'll include it in parameters instead
-                
-                YMMYandexMetrica.reportRevenue(revenue) { _ in
+                let revenue = RevenueInfo(
+                    priceDecimal: NSDecimalNumber(value: price),
+                    currency: currency,
+                    quantity: 1,
+                    productID: productID,
+                    transactionID: nil,
+                    receiptData: nil,
+                    payload: nil
+                )
+
+                AppMetrica.reportRevenue(revenue) { _ in
                     print("✅ [AppAnalytics] AppMetrica Revenue reported: \(price) \(currency) for \(productID)")
                 }
             }
@@ -399,9 +396,47 @@ class AppAnalyticsService {
     }
     
     private func reportToAppMetrica(event: String, parameters: [String: Any]?) async {
-        YMMYandexMetrica.reportEvent(event, parameters: appMetricaJSONParameters(parameters)) { _ in
-            print("✅ [AppAnalytics] AppMetrica event reported: \(event)")
+        guard AppMetrica.isActivated else { return }
+        let onFailure: ((Error) -> Void)? = { error in
+            print("⚠️ [AppAnalytics] AppMetrica event «\(event)»: \(error.localizedDescription)")
         }
+        if let params = appMetricaJSONParameters(parameters) {
+            AppMetrica.reportEvent(name: event, parameters: params, onFailure: onFailure)
+        } else {
+            AppMetrica.reportEvent(name: event, onFailure: onFailure)
+        }
+        print("✅ [AppAnalytics] AppMetrica event reported: \(event)")
+    }
+
+    /// Профиль AppMetrica: токены, PRO и `adapty_profile_id` (custom). Встроенный ProfileId не меняем — как в storecards.
+    func reportUserProfileSnapshot(
+        isProUser: Bool,
+        tokenBalance: Int,
+        adaptyProfileId: String?
+    ) async {
+        guard AppMetrica.isActivated else { return }
+
+        var updates: [UserProfileUpdate] = [
+            ProfileAttribute.customBool(AppMetricaProfileAttributes.isPro).withValue(isProUser),
+            ProfileAttribute.customNumber(AppMetricaProfileAttributes.tokenBalance).withValue(Double(max(0, tokenBalance)))
+        ]
+        if let adaptyProfileId = normalizedAdaptyProfileId(adaptyProfileId) {
+            updates.append(
+                ProfileAttribute.customString(AppMetricaProfileAttributes.adaptyProfileId).withValue(adaptyProfileId)
+            )
+        }
+
+        let profile = MutableUserProfile()
+        profile.apply(from: updates)
+        AppMetrica.reportUserProfile(profile) { error in
+            print("⚠️ [AppAnalytics] AppMetrica profile snapshot: \(error.localizedDescription)")
+        }
+    }
+
+    private func normalizedAdaptyProfileId(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
     
     private func reportToFirebase(event: String, parameters: [String: Any]?) async {
@@ -444,6 +479,15 @@ class AppAnalyticsService {
         guard ConfigurationManager.shared.isAppsFlyerConfigured else { return }
         AppsFlyerLib.shared().logEvent(name, withValues: values)
     }
+}
+
+// MARK: - AppMetrica profile attribute names (должны совпадать с кабинетом)
+
+enum AppMetricaProfileAttributes {
+    /// Adapty profileId; не подменяем встроенный ProfileId AppMetrica.
+    static let adaptyProfileId = "adapty_profile_id"
+    static let tokenBalance = "token_balance"
+    static let isPro = "is_pro"
 }
 
 // MARK: - Event Constants

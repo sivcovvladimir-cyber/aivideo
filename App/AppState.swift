@@ -313,6 +313,8 @@ final class AppState: ObservableObject {
         setupAdaptyObservers()
 
         setupTokenWalletObservers()
+
+        setupAnalyticsProfileObservers()
         
         // Настраиваем наблюдатель для сброса кэша изображений
         setupImageCacheObserver()
@@ -352,6 +354,7 @@ final class AppState: ObservableObject {
 
         // Обновляем статус подписки из Adapty
         updateProStatusFromAdapty()
+        refreshAnalyticsUserProfile()
 
         // Загружаем сохранённые медиа
         loadGeneratedMedia()
@@ -739,11 +742,10 @@ final class AppState: ObservableObject {
         print("✅ [AppState] PRO tracking initialized")
     }
 
-    /// Добавляет бонусные генерации из разового пакета.
-    func addBonusGenerations(_ count: Int) {
-        bonusGenerations += count
-        tokenWallet.addTokens(count)
-        print("🎁 [AppState] +\(count) bonus generations. Total bonus: \(bonusGenerations)")
+    /// Legacy-счётчик бонусных генераций (пакеты); токены начисляет `PurchaseTokenLedgerService`.
+    func notePackGenerationsGranted(_ count: Int) {
+        bonusGenerations += max(0, count)
+        print("🎁 [AppState] +\(count) bonus generations (legacy counter). Total bonus: \(bonusGenerations)")
     }
 
     func spendTokensForGeneration(cost: Int) -> Bool {
@@ -932,6 +934,38 @@ final class AppState: ObservableObject {
                 self.tokenWallet.syncWithCurrentConfig(config: config)
             }
             .store(in: &cancellables)
+
+        tokenWallet.$balance
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshAnalyticsUserProfile()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Снимок custom-атрибутов AppMetrica (токены, PRO, adapty_profile_id) при изменении кошелька или профиля Adapty.
+    private func setupAnalyticsProfileObservers() {
+        adaptyService.$profile
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshAnalyticsUserProfile()
+            }
+            .store(in: &cancellables)
+    }
+
+    @MainActor
+    func refreshAnalyticsUserProfile() {
+        let proStatus = isProUser
+        let balance = tokenWallet.balance
+        let adaptyProfileId = adaptyService.profile?.profileId
+        Task {
+            await AppAnalyticsService.shared.reportUserProfileSnapshot(
+                isProUser: proStatus,
+                tokenBalance: balance,
+                adaptyProfileId: adaptyProfileId
+            )
+        }
     }
     
     /// Настраивает наблюдатели для Adapty Service
@@ -941,6 +975,7 @@ final class AppState: ObservableObject {
         adaptyService.$isProUser
             .sink { [weak self] isPro in
                 self?.isProUser = isPro
+                self?.refreshAnalyticsUserProfile()
                 
                 // Закрываем оверлей paywall — пользователь остаётся на том экране, где был до покупки.
                 if isPro && self?.isPaywallOverlayPresented == true {
@@ -1048,10 +1083,9 @@ final class AppState: ObservableObject {
             print("ℹ️ [AppState] First didBecomeActive skipped to avoid duplicate launch refresh")
             return
         }
-        // При возврате в приложение косметически обновляем период PRO-подписки,
-        // чтобы лимит генераций и цифра на плашке сразу были актуальными.
+        // При возврате в приложение обновляем профиль Adapty: renew подписки и refund → ledger токенов.
+        updateProStatusFromAdapty()
         checkAndResetProPeriodIfNeeded()
-        // Дальнейшее обновление состояния обрабатывается во вьюхах.
     }
     
     // MARK: - Helper Methods

@@ -1070,7 +1070,7 @@ struct PaywallView: View {
                 await transaction.finish()
                 isPurchasing = false
                 print("[paywall] PaywallView.purchaseLocalStoreKit: verified+finish OK id=\(productInfo.vendorProductId)")
-                finishSuccessfulPurchase(for: productInfo)
+                finishSuccessfulPurchase(for: productInfo, transactionId: String(transaction.id))
             case .userCancelled:
                 print("[paywall] PaywallView.purchaseLocalStoreKit: userCancelled id=\(productInfo.vendorProductId)")
                 isPurchasing = false
@@ -1097,22 +1097,43 @@ struct PaywallView: View {
         }
     }
 
-    private func finishSuccessfulPurchase(for product: ProductInfo) {
+    private func finishSuccessfulPurchase(for product: ProductInfo, transactionId: String? = nil) {
         // Единая пост-обработка нужна для Adapty и локального StoreKit: UI получает один и тот же результат покупки.
         if isPackProduct(product),
            let packSize = paywallCache.generationLimit(for: product.vendorProductId) {
-            appState.addBonusGenerations(packSize)
-            // Статус isProUser не меняем — пакеты не дают подписку.
+            applyPurchaseTokenGrant(for: product.vendorProductId, tokens: packSize, transactionId: transactionId)
             NotificationManager.shared.showSuccess("paywall_success_generations_added".localized(with: packSize))
         } else {
-            // Подписка (новая или продление):
-            // всегда обновляем PRO-статус и полностью обновляем подписочный лимит.
             appState.isProUser = true
             appState.onBecamePro()
+            if let tokens = paywallCache.generationLimit(for: product.vendorProductId), tokens > 0 {
+                applyPurchaseTokenGrant(for: product.vendorProductId, tokens: tokens, transactionId: transactionId)
+            }
             NotificationManager.shared.showSuccess("paywall_success_subscription".localized)
         }
 
         dismissPaywallPresentation()
+    }
+
+    /// Начисляет токены после покупки.
+    /// StoreKit-путь (есть `transactionId`) — начисляем сразу по транзакции; последующий sync профиля дедуплицируется по тому же id.
+    /// Adapty-путь — профиль уже обновлён покупкой, начисляем через единый reconcile.
+    private func applyPurchaseTokenGrant(for productId: String, tokens: Int, transactionId: String?) {
+        if transactionId != nil {
+            PurchaseTokenLedgerService.shared.grantFromCheckout(
+                productId: productId,
+                tokens: tokens,
+                transactionId: transactionId
+            )
+        } else if let profile = AdaptyService.shared.profile {
+            PurchaseTokenLedgerService.shared.sync(with: profile)
+        } else {
+            PurchaseTokenLedgerService.shared.grantFromCheckout(
+                productId: productId,
+                tokens: tokens,
+                transactionId: nil
+            )
+        }
     }
     
     private func handleRestore() {
