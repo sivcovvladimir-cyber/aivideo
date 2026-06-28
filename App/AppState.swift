@@ -36,14 +36,14 @@ final class AppState: ObservableObject {
         generationPromptScreenDraft = draft
     }
 
-    /// Открывает таб «Создать» → Lip sync с видео из галереи (`video_id` если сохранён).
+    /// Открывает таб «Создать» → Lip sync с видео из галереи (`video_id` если сохранён); текст реплики не подставляем.
     func openLipSync(with media: GeneratedMedia) {
         var draft = generationPromptScreenDraft
         draft.modeRaw = "lipSync"
         draft.lipSyncVideoLocalPath = media.localPath
         draft.lipSyncVideoProviderJobId = media.providerJobId
         draft.lipSyncInputModeRaw = LipSyncInputMode.lines.rawValue
-        draft.prompt = media.prompt ?? ""
+        draft.prompt = ""
         generationPromptScreenDraft = draft
         currentScreen = .generation
     }

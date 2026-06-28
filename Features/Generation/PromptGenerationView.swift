@@ -30,7 +30,7 @@ struct PromptGenerationView: View {
     @State private var lipSyncAudioDisplayName: String?
     @State private var lipSyncAudioDurationSeconds: Double?
 
-    private static let videoDurationMin = 3
+    private static let videoDurationMin = 2
     private static let videoDurationMax = 15
     /// Transition между двумя кадрами — API clamp до 8 с (`duration_1_to_2`).
     private static let videoDurationTransitionMax = 8
@@ -96,17 +96,17 @@ struct PromptGenerationView: View {
         return ceil(widest) + 16 * 2
     }()
 
-    /// Мин. ширина пиллы длительности по 3…15 с — соседние пиллы не дёргаются при смене значения.
+    /// Мин. ширина пиллы длительности по 2…15 с — соседние пиллы не дёргаются при смене значения.
     private static let durationPillMinWidth: CGFloat = {
         let font = AppTheme.Typography.uiFont(weight: .semiBold, size: 16)
-        let labels = Array(3 ... 15).map { "generation_duration_format".localized(with: $0) }
+        let labels = Array(2 ... 15).map { "generation_duration_format".localized(with: $0) }
         let widest = labels
             .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
             .max() ?? 0
         return ceil(widest) + 16 * 2 + 2
     }()
 
-    /// Доступные значения длительности: обычное видео 3…15 с; transition двух кадров — до 8 с.
+    /// Доступные значения длительности: обычное видео 2…15 с; transition двух кадров — до 8 с.
     private var videoDurationChoices: [Int] {
         if isTwoImageVideoScenario, twoImageVideoMode == .transition {
             return Array(Self.videoDurationMin ... Self.videoDurationTransitionMax)
@@ -179,7 +179,7 @@ struct PromptGenerationView: View {
             switch self {
             case .video: return "video"
             case .photo: return "camera"
-            case .lipSync: return "mouth.fill"
+            case .lipSync: return "mouth"
             }
         }
     }
@@ -813,7 +813,7 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
         .accessibilityHint(Text("generation_duration_picker_hint".localized))
     }
 
-    /// Компактный sheet с сеткой 3…15 с (как у PixVerse), открывается по тапу на pill.
+    /// Компактный sheet с сеткой 2…15 с (как у PixVerse), открывается по тапу на pill.
     private var videoDurationPickerSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
