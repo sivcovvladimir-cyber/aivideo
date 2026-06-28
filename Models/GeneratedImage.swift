@@ -40,6 +40,8 @@ struct GeneratedMedia: Identifiable, Codable, Equatable {
     let brandName: String?
     let logoDescription: String?
     let prompt: String?
+    /// PixVerse `video_id` после генерации — для lip sync без повторной загрузки mp4.
+    let providerJobId: String?
     /// ID модели генерации, если известно.
     let aiModelId: String?
     /// ID палетки (preset/custom), если известно.
@@ -96,7 +98,47 @@ extension GeneratedMedia {
     }
 
     private static func generateVideoThumbnail(for media: GeneratedMedia, destinationPath: String) -> Bool {
-        let asset = AVURLAsset(url: URL(fileURLWithPath: media.localPath))
+        generateVideoThumbnail(atLocalPath: media.localPath, destinationPath: destinationPath)
+    }
+
+    /// Путь `_thumb.jpg` для произвольного mp4 (lip sync temp / library).
+    static func thumbnailPath(forVideoAt localPath: String) -> String {
+        (localPath as NSString).deletingPathExtension + "_thumb.jpg"
+    }
+
+    /// Генерирует превью первого кадра, если `_thumb.jpg` ещё нет (напр. после PhotosPicker).
+    @discardableResult
+    static func ensureVideoThumbnail(at localPath: String) -> Bool {
+        let dest = thumbnailPath(forVideoAt: localPath)
+        if FileManager.default.fileExists(atPath: dest) { return true }
+        guard FileManager.default.fileExists(atPath: localPath) else { return false }
+        return generateVideoThumbnail(atLocalPath: localPath, destinationPath: dest)
+    }
+
+    /// Длительность локального видео в секундах (mp4 из галереи / PhotosPicker).
+    static func localVideoDurationSeconds(at localPath: String) -> Double {
+        let asset = AVURLAsset(url: URL(fileURLWithPath: localPath))
+        let seconds = CMTimeGetSeconds(asset.duration)
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        return seconds
+    }
+
+    /// Подпись длительности для превью, как в системной галерее (`0:05`, `1:23`).
+    static func galleryStyleVideoDurationLabel(at localPath: String) -> String? {
+        let seconds = localVideoDurationSeconds(at: localPath)
+        guard seconds > 0 else { return nil }
+        return galleryStyleDurationLabel(seconds: seconds)
+    }
+
+    static func galleryStyleDurationLabel(seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let minutes = total / 60
+        let secs = total % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
+
+    private static func generateVideoThumbnail(atLocalPath localPath: String, destinationPath: String) -> Bool {
+        let asset = AVURLAsset(url: URL(fileURLWithPath: localPath))
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: thumbMaxPixel, height: thumbMaxPixel)

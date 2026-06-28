@@ -36,6 +36,18 @@ final class AppState: ObservableObject {
         generationPromptScreenDraft = draft
     }
 
+    /// Открывает таб «Создать» → Lip sync с видео из галереи (`video_id` если сохранён).
+    func openLipSync(with media: GeneratedMedia) {
+        var draft = generationPromptScreenDraft
+        draft.modeRaw = "lipSync"
+        draft.lipSyncVideoLocalPath = media.localPath
+        draft.lipSyncVideoProviderJobId = media.providerJobId
+        draft.lipSyncInputModeRaw = LipSyncInputMode.lines.rawValue
+        draft.prompt = media.prompt ?? ""
+        generationPromptScreenDraft = draft
+        currentScreen = .generation
+    }
+
     // MARK: - Сессионный снимок Supabase (один раз при старте процесса)
 
     enum SessionRemoteBootstrapPhase: Equatable {

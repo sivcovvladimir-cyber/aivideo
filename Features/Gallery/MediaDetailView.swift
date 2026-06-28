@@ -375,6 +375,28 @@ struct MediaDetailView: View {
 
                     Spacer(minLength: 0)
                 
+                if !hideActionButtons, currentMedia.isVideo, !isEffectReferencePickMode {
+                    Button {
+                        appState.openLipSync(with: currentMedia)
+                        onDismiss()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "mouth.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("generation_mode_lipsync".localized)
+                                .font(AppTheme.Typography.body.weight(.semibold))
+                        }
+                        .foregroundColor(AppTheme.Colors.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .appPlainButtonStyle()
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                    .offset(y: isUIHidden ? bottomControlsHideOffset : 0)
+                }
+
                 // Bottom action buttons - показываем только если не скрыты
                 if !hideActionButtons {
                     HStack(spacing: 24) {
@@ -1000,6 +1022,7 @@ struct MediaDetailView_Previews: PreviewProvider {
             brandName: nil,
             logoDescription: nil,
             prompt: nil,
+            providerJobId: nil,
             aiModelId: nil,
             paletteId: nil
         )

@@ -25,6 +25,7 @@ struct PixVerseCreateTransitionVideoRequest {
     let transitionPrompt: String
     let duration: Int
     let audio: Bool?
+    let quality: String
     let replyRef: String
 }
 
@@ -35,6 +36,7 @@ struct PixVerseCreateFusionVideoRequest {
     let duration: Int
     let audio: Bool?
     let aspectRatio: String
+    let quality: String
     let replyRef: String
 }
 
@@ -43,6 +45,7 @@ struct PixVerseCreateFramesVideoRequest {
     let lastFramePath: String
     let duration: Int
     let audio: Bool?
+    let quality: String
     let replyRef: String
 }
 
@@ -53,6 +56,16 @@ struct PixVerseCreateImageRequest {
     let secondImagePath: String?
     /// Опционально: для i2i с `image_path_*` useapi берёт дефолт `auto` (см. POST images/create).
     let aspectRatio: String?
+    let replyRef: String
+}
+
+struct PixVerseCreateLipSyncRequest {
+    let videoId: String?
+    let videoPath: String?
+    let prompt: String?
+    let speakerId: String?
+    let audioPath: String?
+    let originalSoundSwitch: Bool
     let replyRef: String
 }
 
@@ -134,7 +147,8 @@ final class PixVerseAPIService {
 
     private let baseURL = URL(string: "https://api.useapi.net/v2/pixverse")!
     private let defaultVideoModel = "pixverse-c1"
-    private let defaultVideoQuality = "720p"
+    /// Дефолт prompt-видео и effect-видео без override в каталоге.
+    private let defaultPromptVideoQuality = "540p"
     private let defaultImageModel = "nano-banana-2"
     private let defaultImageQuality = "1080p"
     private let maxJobs = 3
@@ -152,6 +166,11 @@ final class PixVerseAPIService {
     private init() {}
 
     func uploadImage(_ data: Data, contentType: String = "image/jpeg") async throws -> PixVerseUploadResult {
+        try await uploadFile(data, contentType: contentType)
+    }
+
+    /// Загрузка видео/аудио/изображения в POST /files.
+    func uploadFile(_ data: Data, contentType: String) async throws -> PixVerseUploadResult {
         guard isConfigured else { throw NetworkError.invalidConfiguration }
 
         var components = URLComponents(url: baseURL.appendingPathComponent("files/"), resolvingAgainstBaseURL: false)
@@ -176,6 +195,56 @@ final class PixVerseAPIService {
         throw NetworkError.uploadFailed
     }
 
+    /// Список TTS-голосов для lip sync.
+    func fetchLipSyncVoices() async throws -> [PixVerseVoice] {
+        guard isConfigured else { throw NetworkError.invalidConfiguration }
+        var components = URLComponents(url: baseURL.appendingPathComponent("videos/voices/"), resolvingAgainstBaseURL: false)
+        if let accountEmail {
+            components?.queryItems = [URLQueryItem(name: "email", value: accountEmail)]
+        }
+        guard let url = components?.url else { throw NetworkError.invalidURL }
+        let response = try await get(url: url, decode: PixVerseVoicesResponse.self)
+        return response.ttsList
+    }
+
+    func createVideoLipSync(_ payload: PixVerseCreateLipSyncRequest) async throws -> PixVerseCreateJobOutcome {
+        guard isConfigured else { throw NetworkError.invalidConfiguration }
+
+        let endpointPath = "videos/lipsync"
+        var body: [String: Any] = [
+            "replyRef": payload.replyRef,
+            "maxJobs": maxJobs,
+            "off_peak_mode": false,
+            "original_sound_switch": payload.originalSoundSwitch
+        ]
+
+        if let accountEmail {
+            body["email"] = accountEmail
+        }
+        if let videoId = payload.videoId, !videoId.isEmpty {
+            body["video_id"] = videoId
+        }
+        if let videoPath = payload.videoPath, !videoPath.isEmpty {
+            body["video_path"] = videoPath
+        }
+        if let prompt = payload.prompt, !prompt.isEmpty {
+            body["prompt"] = String(prompt.prefix(LipSyncLimits.maxTextCharacters))
+        }
+        if let speakerId = payload.speakerId, !speakerId.isEmpty {
+            body["speaker_id"] = speakerId
+        }
+        if let audioPath = payload.audioPath, !audioPath.isEmpty {
+            body["audio_path"] = audioPath
+        }
+
+        return try await submitCreateJob(endpointPath: endpointPath, body: body) { response in
+            guard let videoId = response.videoId, !videoId.isEmpty else {
+                throw NetworkError.invalidResponse
+            }
+            return PixVerseCreatedJob(id: videoId, kind: .video)
+        }
+    }
+
     func createVideo(_ payload: PixVerseCreateVideoRequest) async throws -> PixVerseCreateJobOutcome {
         guard isConfigured else { throw NetworkError.invalidConfiguration }
 
@@ -183,7 +252,7 @@ final class PixVerseAPIService {
         var body: [String: Any] = [
             "prompt": payload.prompt,
             "duration": payload.duration,
-            "quality": payload.quality ?? defaultVideoQuality,
+            "quality": payload.quality ?? defaultPromptVideoQuality,
             "replyRef": payload.replyRef,
             "maxJobs": maxJobs,
             "off_peak_mode": false
@@ -265,7 +334,7 @@ final class PixVerseAPIService {
             "frame_1_path": payload.frame1Path,
             "frame_2_path": payload.frame2Path,
             "duration_1_to_2": max(1, min(8, payload.duration)),
-            "quality": defaultVideoQuality,
+            "quality": payload.quality,
             "replyRef": payload.replyRef,
             "maxJobs": maxJobs,
             "off_peak_mode": false
@@ -300,7 +369,7 @@ final class PixVerseAPIService {
             "frame_1_path": payload.frame1Path,
             "frame_2_path": payload.frame2Path,
             "duration": payload.duration,
-            "quality": defaultVideoQuality,
+            "quality": payload.quality,
             "aspect_ratio": payload.aspectRatio,
             "replyRef": payload.replyRef,
             "maxJobs": maxJobs,
@@ -331,7 +400,7 @@ final class PixVerseAPIService {
             "first_frame_path": payload.firstFramePath,
             "last_frame_path": payload.lastFramePath,
             "duration": payload.duration,
-            "quality": defaultVideoQuality,
+            "quality": payload.quality,
             "replyRef": payload.replyRef,
             "maxJobs": maxJobs,
             "off_peak_mode": false

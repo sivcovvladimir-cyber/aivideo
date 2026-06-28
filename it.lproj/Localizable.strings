@@ -6,6 +6,7 @@
 "library_tab" = "Galleria";
 "generation_tab" = "Create";
 "generation_duration_format" = "%d sec";
+"generation_duration_short_format" = "%ds";
 "generation_screen_title" = "Generation";
 "generation_video_two_image_mode_transition" = "Transizione";
 "generation_video_two_image_mode_fusion" = "Fusione";

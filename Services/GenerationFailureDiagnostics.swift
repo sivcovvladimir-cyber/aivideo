@@ -86,7 +86,7 @@ struct GenerationFailureDiagnostics {
 
     private static func requestDictionary(_ request: GenerationJobRequest) -> [String: Any] {
         switch request {
-        case .promptVideo(let prompt, let duration, let audio, let aspect, let path0, let path1, let twoImageMode):
+        case .promptVideo(let prompt, let duration, let audio, let aspect, let path0, let path1, let twoImageMode, let quality):
             return [
                 "kind": "prompt_video",
                 "prompt_length": prompt.count,
@@ -95,7 +95,8 @@ struct GenerationFailureDiagnostics {
                 "aspect_ratio": jsonValue(aspect),
                 "local_image_path_1": jsonValue(path0),
                 "local_image_path_2": jsonValue(path1),
-                "two_image_mode": jsonValue(twoImageMode?.rawValue)
+                "two_image_mode": jsonValue(twoImageMode?.rawValue),
+                "video_quality": quality.rawValue
             ]
         case .promptPhoto(let prompt, let aspect, let path0, let path1):
             return [
@@ -113,6 +114,16 @@ struct GenerationFailureDiagnostics {
                 "template_id": jsonValue(preset.providerTemplateId),
                 "video_quality": preset.resolvedVideoQualityForGeneration(),
                 "local_image_path": path
+            ]
+        case .lipSync(let linesPrompt, let speakerId, let audioPath, let videoPath, let providerJobId, let originalAudio):
+            return [
+                "kind": "lip_sync",
+                "lines_prompt_length": linesPrompt?.count ?? 0,
+                "speaker_id": jsonValue(speakerId),
+                "local_audio_path": jsonValue(audioPath),
+                "local_video_path": jsonValue(videoPath),
+                "source_provider_job_id": jsonValue(providerJobId),
+                "original_audio_enabled": originalAudio
             ]
         }
     }

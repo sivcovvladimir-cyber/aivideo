@@ -34,6 +34,7 @@ final class GeneratedImageService {
             brandName: nil,
             logoDescription: nil,
             prompt: nil,
+            providerJobId: nil,
             aiModelId: nil,
             paletteId: nil
         )
@@ -49,7 +50,13 @@ final class GeneratedImageService {
     }
 
     // Сохраняет готовый AI Video результат из PixVerse в общий локальный индекс Library.
-    func saveGeneratedMedia(data: Data, type: MediaType, prompt: String?, resultUrl: String) throws -> GeneratedMedia {
+    func saveGeneratedMedia(
+        data: Data,
+        type: MediaType,
+        prompt: String?,
+        resultUrl: String,
+        providerJobId: String? = nil
+    ) throws -> GeneratedMedia {
         let mediaId = UUID().uuidString
         let fileExtension = type == .video ? "mp4" : "jpg"
         let fileName = "\(mediaId).\(fileExtension)"
@@ -75,6 +82,7 @@ final class GeneratedImageService {
             brandName: nil,
             logoDescription: nil,
             prompt: prompt,
+            providerJobId: providerJobId,
             aiModelId: nil,
             paletteId: nil
         )
@@ -84,7 +92,7 @@ final class GeneratedImageService {
         var allMedia = loadGeneratedImages()
         allMedia.insert(generatedMedia, at: 0)
         saveGeneratedImages(allMedia)
-        print("💾 [GeneratedImageService] Saved PixVerse media: \(mediaId) from \(resultUrl)")
+        print("💾 [GeneratedImageService] Saved PixVerse media: \(mediaId) providerJob=\(providerJobId ?? "nil") from \(resultUrl)")
         return generatedMedia
     }
 

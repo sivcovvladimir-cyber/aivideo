@@ -37,6 +37,8 @@
 		FA6E001A2F1000010000001A /* GenerationBillingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001B2F1000010000001B /* GenerationBillingService.swift */; };
 		FA6E001C2F1000010000001C /* EffectsSectionBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */; };
 		FA6E001E2F2000030000001E /* AIVideo.storekit in Resources */ = {isa = PBXBuildFile; fileRef = FA6E001F2F2000030000001F /* AIVideo.storekit */; };
+		FA6E00652F10000100000065 /* LipSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00662F10000100000066 /* LipSyncModels.swift */; };
+		FA6E00672F10000100000067 /* LipSyncGenerationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00682F10000100000068 /* LipSyncGenerationSection.swift */; };
 		FA6E00222F10000100000022 /* GenerationPromptScreenDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00212F10000100000021 /* GenerationPromptScreenDraft.swift */; };
 		FA6E00302F10000100000030 /* SupabaseSessionBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00312F10000100000031 /* SupabaseSessionBootstrap.swift */; };
 		FA6E00402F10000100000040 /* EffectCatalogRailCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6E00412F10000100000041 /* EffectCatalogRailCard.swift */; };
@@ -141,6 +143,8 @@
 		FA6E001B2F1000010000001B /* GenerationBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationBillingService.swift; sourceTree = "<group>"; };
 		FA6E001D2F1000010000001D /* EffectsSectionBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsSectionBrowseView.swift; sourceTree = "<group>"; };
 		FA6E001F2F2000030000001F /* AIVideo.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AIVideo.storekit; sourceTree = "<group>"; };
+		FA6E00662F10000100000066 /* LipSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LipSyncModels.swift; sourceTree = "<group>"; };
+		FA6E00682F10000100000068 /* LipSyncGenerationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LipSyncGenerationSection.swift; sourceTree = "<group>"; };
 		FA6E00212F10000100000021 /* GenerationPromptScreenDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationPromptScreenDraft.swift; sourceTree = "<group>"; };
 		FA6E00312F10000100000031 /* SupabaseSessionBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseSessionBootstrap.swift; sourceTree = "<group>"; };
 		FA6E00412F10000100000041 /* EffectCatalogRailCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectCatalogRailCard.swift; sourceTree = "<group>"; };
@@ -348,6 +352,7 @@
 			isa = PBXGroup;
 			children = (
 				FA6E00042F10000100000004 /* PromptGenerationView.swift */,
+				FA6E00682F10000100000068 /* LipSyncGenerationSection.swift */,
 				FA6E00192F10000100000019 /* GenerationProgressOverlayView.swift */,
 			);
 			path = Generation;
@@ -628,6 +633,7 @@
 			isa = PBXGroup;
 			children = (
 				FAF17AA82E0AEB5F00A34D7E /* GeneratedImage.swift */,
+				FA6E00662F10000100000066 /* LipSyncModels.swift */,
 				FA6E00212F10000100000021 /* GenerationPromptScreenDraft.swift */,
 				FA6E000A2F1000010000000A /* EffectsCatalog.swift */,
 				FA6E00472F10000100000049 /* EffectPreset+BundledPreview.swift */,
@@ -878,6 +884,8 @@
 				FA6E001C2F1000010000001C /* EffectsSectionBrowseView.swift in Sources */,
 				FA6E00102F10000100000010 /* EffectDetailView.swift in Sources */,
 				FA6E00032F10000100000003 /* PromptGenerationView.swift in Sources */,
+				FA6E00672F10000100000067 /* LipSyncGenerationSection.swift in Sources */,
+				FA6E00652F10000100000065 /* LipSyncModels.swift in Sources */,
 				FA6E00182F10000100000018 /* GenerationProgressOverlayView.swift in Sources */,
 				FA6E00072F10000100000007 /* GenerationCostCalculator.swift in Sources */,
 				FA6E000D2F1000010000000D /* PaywallPlacementTier.swift in Sources */,
@@ -1041,7 +1049,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1070,7 +1078,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1093,7 +1101,7 @@
 				CODE_SIGN_ENTITLEMENTS = aivideo/aivideo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
@@ -1122,7 +1130,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jones.aivideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

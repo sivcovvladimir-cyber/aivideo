@@ -34,8 +34,8 @@ struct EffectPreset: Identifiable, Codable, Equatable {
         return w / h
     }
 
-    /// Значение `quality` для POST videos/create: из БД или дефолт `720p`.
-    func resolvedVideoQualityForGeneration(defaultQuality: String = "720p") -> String {
+    /// Значение `quality` для POST videos/create: из БД или дефолт `540p`.
+    func resolvedVideoQualityForGeneration(defaultQuality: String = "540p") -> String {
         let trimmed = videoQuality?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return defaultQuality }
         return trimmed

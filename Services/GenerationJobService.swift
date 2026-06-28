@@ -28,13 +28,49 @@ enum PromptVideoTransitionStyle: String, Codable, CaseIterable {
     case custom
 }
 
+/// Качество prompt-видео в API (`540p`, `720p`); эффекты из каталога используют свой `quality` из БД.
+enum PromptVideoQuality: String, Codable, CaseIterable, Identifiable {
+    case p540 = "540p"
+    case p720 = "720p"
+
+    var id: String { rawValue }
+
+    /// Множитель к базовой цене prompt-видео: 540p = 1×, 720p = 1.5×.
+    var tokenPriceMultiplier: Double {
+        switch self {
+        case .p540: return 1.0
+        case .p720: return 1.5
+        }
+    }
+
+    static var defaultForPromptVideo: PromptVideoQuality { .p540 }
+}
+
 enum GenerationJobRequest {
     /// `aspectRatio` — только для text→video; при референсах оставляем `nil`, формат кадра задаёт вход.
     /// Для двух локальных фото используем отдельные API-режимы (`transition`/`fusion`/`frames`) после upload.
-    case promptVideo(prompt: String, duration: Int, audioEnabled: Bool, aspectRatio: String?, inputImagePath: String?, secondInputImagePath: String?, twoImageMode: PromptVideoTwoImageMode?)
+    case promptVideo(
+        prompt: String,
+        duration: Int,
+        audioEnabled: Bool,
+        aspectRatio: String?,
+        inputImagePath: String?,
+        secondInputImagePath: String?,
+        twoImageMode: PromptVideoTwoImageMode?,
+        quality: PromptVideoQuality
+    )
     /// `aspectRatio` — только text→image; при референсах (`image_path_1`…`2`) не передаём в API — дефолт `auto` по документации useapi.
     case promptPhoto(prompt: String, aspectRatio: String?, inputImagePath: String?, secondInputImagePath: String?)
     case effect(preset: EffectPreset, inputImagePath: String)
+    /// Lip sync: TTS (`linesPrompt` + `speakerId`) или upload (`audioLocalPath`). Видео — `sourceProviderJobId` или upload `sourceVideoLocalPath`.
+    case lipSync(
+        linesPrompt: String?,
+        speakerId: String?,
+        audioLocalPath: String?,
+        sourceVideoLocalPath: String?,
+        sourceProviderJobId: String?,
+        originalAudioEnabled: Bool
+    )
 }
 
 extension GenerationJobRequest: Codable {}
@@ -103,8 +139,8 @@ final class GenerationJobService: ObservableObject {
     private var activeFailureDiagnostics = GenerationFailureDiagnostics()
     /// v5: у `promptPhoto` `aspectRatio` опционален (i2i без явного aspect — провайдер по умолчанию `auto`).
     /// v6: `LibraryGenerationJob.id` — монотонный `Int` (не UUID).
-    /// v8: режим двух фото в `promptVideo`; v9: `providerRequestLog` для полного JSON в `request_metadata`.
-    private let persistedJobsKey = "aivideo_generation_recent_jobs_v9"
+    /// v10: `promptVideo` включает `quality` (540p/720p).
+    private let persistedJobsKey = "aivideo_generation_recent_jobs_v11"
     private static let nextJobIdKey = "aivideo_library_generation_job_next_id"
     private static let jobIdLock = NSLock()
 
@@ -250,7 +286,11 @@ final class GenerationJobService: ObservableObject {
             let result = try await api.pollUntilCompleted(job: outcome.job)
             activeFailureDiagnostics.setPhase("saving")
             phase = .saving
-            let media = try await downloadAndSave(result: result, prompt: request.promptForLibrary)
+            let media = try await downloadAndSave(
+                result: result,
+                prompt: request.promptForLibrary,
+                providerJobId: outcome.job.id
+            )
 
             await Self.pushGenerationLog(
                 clientJobId: jobId,
@@ -332,7 +372,11 @@ final class GenerationJobService: ObservableObject {
             )
             let result = try await api.pollUntilCompleted(job: providerJob)
             phase = .saving
-            let media = try await downloadAndSave(result: result, prompt: job.request.promptForLibrary)
+            let media = try await downloadAndSave(
+                result: result,
+                prompt: job.request.promptForLibrary,
+                providerJobId: providerJob.id
+            )
             await Self.pushGenerationLog(
                 clientJobId: job.id,
                 request: job.request,
@@ -370,11 +414,12 @@ final class GenerationJobService: ObservableObject {
         let replyRef = UUID().uuidString
 
         switch request {
-        case .promptVideo(let prompt, let duration, let audioEnabled, let aspectRatio, let inputImagePath, let secondInputImagePath, let twoImageMode):
+        case .promptVideo(let prompt, let duration, let audioEnabled, let aspectRatio, let inputImagePath, let secondInputImagePath, let twoImageMode, let quality):
             phase = .queued
             activeFailureDiagnostics.setPhase("uploading")
             let uploadedFirst = try await uploadInputImageIfNeeded(inputImagePath, label: "video_image_1")
             let uploadedSecond = try await uploadInputImageIfNeeded(secondInputImagePath, label: "video_image_2")
+            let apiQuality = quality.rawValue
             // Когда пользователь добавляет 2 фото в режиме видео, роутим запрос на отдельные endpoint'ы:
             // transition (дефолт), fusion или frames — чтобы не отправлять `last_frame_path` в `videos/create`.
             if let first = uploadedFirst, let second = uploadedSecond {
@@ -386,6 +431,7 @@ final class GenerationJobService: ObservableObject {
                         transitionPrompt: prompt,
                         duration: duration,
                         audio: audioEnabled,
+                        quality: apiQuality,
                         replyRef: replyRef
                     ))
                 case .fusion:
@@ -396,6 +442,7 @@ final class GenerationJobService: ObservableObject {
                         duration: duration,
                         audio: audioEnabled,
                         aspectRatio: aspectRatio ?? "9:16",
+                        quality: apiQuality,
                         replyRef: replyRef
                     ))
                 case .frames:
@@ -404,6 +451,7 @@ final class GenerationJobService: ObservableObject {
                         lastFramePath: second,
                         duration: duration,
                         audio: audioEnabled,
+                        quality: apiQuality,
                         replyRef: replyRef
                     ))
                 }
@@ -417,7 +465,7 @@ final class GenerationJobService: ObservableObject {
                 duration: duration,
                 audio: audioEnabled,
                 aspectRatio: aspectRatio,
-                quality: nil,
+                quality: apiQuality,
                 replyRef: replyRef
             ))
 
@@ -448,6 +496,44 @@ final class GenerationJobService: ObservableObject {
                 audio: nil,
                 aspectRatio: preset.aspectRatio,
                 quality: preset.resolvedVideoQualityForGeneration(),
+                replyRef: replyRef
+            ))
+
+        case .lipSync(let linesPrompt, let speakerId, let audioLocalPath, let sourceVideoLocalPath, let sourceProviderJobId, let originalAudioEnabled):
+            phase = .queued
+            activeFailureDiagnostics.setPhase("uploading")
+
+            var uploadedVideoPath: String?
+            let trimmedProviderId = sourceProviderJobId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasProviderVideoId = trimmedProviderId?.isEmpty == false
+
+            if !hasProviderVideoId {
+                guard let sourceVideoLocalPath,
+                      FileManager.default.fileExists(atPath: sourceVideoLocalPath) else {
+                    throw NetworkError.invalidData
+                }
+                let videoData = try Data(contentsOf: URL(fileURLWithPath: sourceVideoLocalPath))
+                let videoUpload = try await api.uploadFile(videoData, contentType: "video/mp4")
+                uploadedVideoPath = videoUpload.path
+            }
+
+            var uploadedAudioPath: String?
+            if let audioLocalPath, FileManager.default.fileExists(atPath: audioLocalPath) {
+                let ext = (audioLocalPath as NSString).pathExtension.lowercased()
+                let contentType = ext == "wav" ? "audio/wav" : "audio/mpeg"
+                let audioData = try Data(contentsOf: URL(fileURLWithPath: audioLocalPath))
+                let audioUpload = try await api.uploadFile(audioData, contentType: contentType)
+                uploadedAudioPath = audioUpload.path
+            }
+
+            phase = .queued
+            return try await api.createVideoLipSync(PixVerseCreateLipSyncRequest(
+                videoId: hasProviderVideoId ? trimmedProviderId : nil,
+                videoPath: uploadedVideoPath,
+                prompt: linesPrompt,
+                speakerId: speakerId,
+                audioPath: uploadedAudioPath,
+                originalSoundSwitch: originalAudioEnabled,
                 replyRef: replyRef
             ))
         }
@@ -503,19 +589,21 @@ final class GenerationJobService: ObservableObject {
         return result
     }
 
-    private func downloadAndSave(result: PixVerseCompletedResult, prompt: String?) async throws -> GeneratedMedia {
+    private func downloadAndSave(result: PixVerseCompletedResult, prompt: String?, providerJobId: String? = nil) async throws -> GeneratedMedia {
         let (data, response) = try await URLSession.shared.data(from: result.url)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw NetworkError.httpError(http.statusCode)
         }
         let mediaType: MediaType = result.kind == .video ? .video : .image
         let resultURL = result.url.absoluteString
+        let savedProviderJobId = providerJobId ?? result.id
         return try await Task.detached(priority: .userInitiated) {
             try GeneratedImageService.shared.saveGeneratedMedia(
                 data: data,
                 type: mediaType,
                 prompt: prompt,
-                resultUrl: resultURL
+                resultUrl: resultURL,
+                providerJobId: savedProviderJobId
             )
         }.value
     }
@@ -673,12 +761,14 @@ private extension GenerationJobRequest {
     /// Поля для RPC `upsert_generation_log` (тип пресета, длительность, аудио).
     var generationLogRouting: (generationType: String, effectPresetId: Int?, aspectRatio: String?, durationSeconds: Int?, audioEnabled: Bool?) {
         switch self {
-        case .promptVideo(_, let duration, let audioEnabled, let aspectRatio, _, _, _):
+        case .promptVideo(_, let duration, let audioEnabled, let aspectRatio, _, _, _, _):
             return ("prompt_video", nil, aspectRatio, duration, audioEnabled)
         case .promptPhoto(_, let aspectRatio, _, _):
             return ("prompt_photo", nil, aspectRatio, nil, nil)
         case .effect(let preset, _):
             return ("effect_video", preset.id, preset.aspectRatio, preset.durationSeconds, nil)
+        case .lipSync(_, _, _, _, _, let originalAudioEnabled):
+            return ("lip_sync", nil, nil, nil, originalAudioEnabled)
         }
     }
 
@@ -690,15 +780,19 @@ private extension GenerationJobRequest {
             return "library_job_prompt_photo".localized
         case .effect(let preset, _):
             return preset.title
+        case .lipSync:
+            return "library_job_lipsync".localized
         }
     }
 
     var promptForLibrary: String? {
         switch self {
-        case .promptVideo(let prompt, _, _, _, _, _, _), .promptPhoto(let prompt, _, _, _):
+        case .promptVideo(let prompt, _, _, _, _, _, _, _), .promptPhoto(let prompt, _, _, _):
             return prompt
         case .effect(let preset, _):
             return preset.promptTemplate ?? preset.description ?? preset.title
+        case .lipSync(let linesPrompt, _, _, _, _, _):
+            return linesPrompt
         }
     }
 }

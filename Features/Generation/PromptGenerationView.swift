@@ -17,8 +17,24 @@ struct PromptGenerationView: View {
     @State private var prompt: String = ""
     @State private var durationSeconds: Double = 5
     @State private var audioEnabled = false
+    @State private var videoQuality: PromptVideoQuality = .p540
+    @State private var showVideoDurationPicker = false
 
-    private static let videoDurationChoices = Array(3 ... 7)
+    // Lip sync
+    @State private var lipSyncInputMode: LipSyncInputMode = .lines
+    @State private var lipSyncVideoLocalPath: String?
+    @State private var lipSyncVideoProviderJobId: String?
+    @State private var lipSyncSelectedSpeakerId: String?
+    @State private var lipSyncOriginalAudioEnabled = false
+    @State private var lipSyncAudioLocalPath: String?
+    @State private var lipSyncAudioDisplayName: String?
+    @State private var lipSyncAudioDurationSeconds: Double?
+
+    private static let videoDurationMin = 3
+    private static let videoDurationMax = 15
+    /// Transition между двумя кадрами — API clamp до 8 с (`duration_1_to_2`).
+    private static let videoDurationTransitionMax = 8
+    private static let videoDurationGridColumns = 5
 
     /// Те же строки `aspect_ratio` для фото (`images/create`) и промпт-видео (`videos/create`).
     private enum PhotoAspectRatio: String, CaseIterable {
@@ -54,8 +70,9 @@ struct PromptGenerationView: View {
     }
     private let panelCornerRadius: CGFloat = 28
     private let promptCardCornerRadius: CGFloat = 24
-    /// Сторона квадратной плитки превью референса; картинка только маскируется в UI (`scaledToFill` + clip), пиксели не кропаются.
+    /// Сторона плитки референса на Video/Photo; lip sync использует меньший слот.
     private let photoTileHeight: CGFloat = 160
+    private let lipSyncVideoTileSize: CGFloat = 72
     /// Единая высота сегмента Video/Photo и пилл настроек — как в референсе Figma.
     private let generationControlPillHeight: CGFloat = 44
     /// Ширина пиллы aspect по самой длинной подписи enum — «9:16» и Audio не смещаются при смене 1:1 ↔ 16:9 и т.д.
@@ -70,16 +87,32 @@ struct PromptGenerationView: View {
         return ceil(widest) + glyphBox + innerSpacing + horizontalPadding
     }()
 
-    /// Мин. ширина пиллы длительности по всем значениям 3…7 + 2 pt запаса — Audio не дёргается при переключении.
+    /// Мин. ширина пиллы качества по «720p» — соседние пиллы не дёргаются при переключении 540p ↔ 720p.
+    private static let videoQualityPillMinWidth: CGFloat = {
+        let font = AppTheme.Typography.uiFont(weight: .semiBold, size: 16)
+        let widest = PromptVideoQuality.allCases
+            .map { ($0.rawValue as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        return ceil(widest) + 16 * 2
+    }()
+
+    /// Мин. ширина пиллы длительности по 3…15 с — соседние пиллы не дёргаются при смене значения.
     private static let durationPillMinWidth: CGFloat = {
         let font = AppTheme.Typography.uiFont(weight: .semiBold, size: 16)
-        let labels = videoDurationChoices.map { "generation_duration_format".localized(with: $0) }
+        let labels = Array(3 ... 15).map { "generation_duration_format".localized(with: $0) }
         let widest = labels
             .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
             .max() ?? 0
-        let horizontalPadding: CGFloat = 16 * 2
-        return ceil(widest) + horizontalPadding + 2
+        return ceil(widest) + 16 * 2 + 2
     }()
+
+    /// Доступные значения длительности: обычное видео 3…15 с; transition двух кадров — до 8 с.
+    private var videoDurationChoices: [Int] {
+        if isTwoImageVideoScenario, twoImageVideoMode == .transition {
+            return Array(Self.videoDurationMin ... Self.videoDurationTransitionMax)
+        }
+        return Array(Self.videoDurationMin ... Self.videoDurationMax)
+    }
 
     // «Удиви меня»: яркие сцены, живые герои, знаменитости и культовые персонажи в разных стилях (в т.ч. один карикатурный).
     // Дополнительно — ultra-читабельные «камерные» стили (хром, RGB-сплит, 3D-брутализм) и классические AI-хиты: watercolor, color splash, double exposure, riso, paper-cut и т.п.
@@ -130,6 +163,7 @@ struct PromptGenerationView: View {
     private enum GenerationMode: String, CaseIterable, Identifiable {
         case video
         case photo
+        case lipSync
 
         var id: String { rawValue }
 
@@ -137,6 +171,15 @@ struct PromptGenerationView: View {
             switch self {
             case .video: return "generation_mode_video".localized
             case .photo: return "generation_mode_photo".localized
+            case .lipSync: return "generation_mode_lipsync".localized
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .video: return "video"
+            case .photo: return "camera"
+            case .lipSync: return "mouth.fill"
             }
         }
     }
@@ -162,14 +205,45 @@ struct PromptGenerationView: View {
         switch mode {
         case .video:
             return calculator.promptGenerationCost(
-                kind: .video(durationSeconds: Int(durationSeconds.rounded()), audioEnabled: audioEnabled)
+                kind: .video(
+                    durationSeconds: Int(durationSeconds.rounded()),
+                    audioEnabled: audioEnabled,
+                    quality: videoQuality
+                )
             )
         case .photo:
             return calculator.promptGenerationCost(kind: .photo)
+        case .lipSync:
+            return calculator.promptGenerationCost(
+                kind: .lipSync(
+                    inputMode: lipSyncInputMode,
+                    characterCount: lipSyncTrimmedPrompt.count,
+                    audioDurationSeconds: lipSyncAudioDurationSeconds
+                )
+            )
         }
     }
 
+    private var lipSyncTrimmedPrompt: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var canSubmit: Bool {
+        switch mode {
+        case .lipSync:
+            guard lipSyncHasVideo else { return false }
+            switch lipSyncInputMode {
+            case .lines:
+                return !lipSyncTrimmedPrompt.isEmpty
+            case .uploadAudio:
+                return lipSyncAudioLocalPath != nil
+                    && (lipSyncAudioDurationSeconds ?? 0) > 0
+                    && (lipSyncAudioDurationSeconds ?? 0) <= LipSyncLimits.maxAudioSeconds
+            }
+        case .video, .photo:
+            break
+        }
+
         let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         if isTwoImageVideoScenario {
             switch twoImageVideoMode {
@@ -180,6 +254,11 @@ struct PromptGenerationView: View {
             }
         }
         return !normalizedPrompt.isEmpty
+    }
+
+    private var lipSyncHasVideo: Bool {
+        guard let path = lipSyncVideoLocalPath else { return false }
+        return FileManager.default.fileExists(atPath: path)
     }
 
     private var canGenerate: Bool {
@@ -207,13 +286,35 @@ struct PromptGenerationView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
                         generationModeSection
-                        generationMainCard
+                        if mode == .lipSync {
+                            LipSyncGenerationSection(
+                                videoLocalPath: $lipSyncVideoLocalPath,
+                                videoProviderJobId: $lipSyncVideoProviderJobId,
+                                inputMode: $lipSyncInputMode,
+                                linesPrompt: $prompt,
+                                selectedSpeakerId: $lipSyncSelectedSpeakerId,
+                                originalAudioEnabled: $lipSyncOriginalAudioEnabled,
+                                audioFileLocalPath: $lipSyncAudioLocalPath,
+                                audioFileDisplayName: $lipSyncAudioDisplayName,
+                                audioDurationSeconds: $lipSyncAudioDurationSeconds,
+                                panelCornerRadius: panelCornerRadius,
+                                promptCardCornerRadius: promptCardCornerRadius,
+                                photoTileHeight: lipSyncVideoTileSize,
+                                generationMainPanelFill: generationMainPanelFill,
+                                generationMainPanelStroke: generationMainPanelStroke,
+                                promptCardFill: promptCardFill,
+                                generationPanelSecondaryFill: generationPanelSecondaryFill,
+                                isJobRunning: generationJob.isRunning
+                            )
+                        } else {
+                            generationMainCard
 
-                        if mode == .video {
-                            videoSettingsSection
-                        } else if !hasReferencePhotos {
-                            // Пилла aspect только без референса; с фото `aspect_ratio` в API не шлём — дефолт useapi/PixVerse `auto` по входному изображению.
-                            photoSettingsSection
+                            if mode == .video {
+                                videoSettingsSection
+                            } else if !hasReferencePhotos {
+                                // Пилла aspect только без референса; с фото `aspect_ratio` в API не шлём — дефолт useapi/PixVerse `auto` по входному изображению.
+                                photoSettingsSection
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -242,6 +343,18 @@ struct PromptGenerationView: View {
         .onChange(of: pickerItemSlot1) { _, newItem in
             guard let newItem else { return }
             Task { await loadPickerItem(newItem, slot: 1) }
+        }
+        .onChange(of: twoImageVideoMode) { _, _ in
+            clampDurationToAvailableChoices()
+        }
+        .onChange(of: referenceImageSlot0) { _, _ in
+            clampDurationToAvailableChoices()
+        }
+        .onChange(of: referenceImageSlot1) { _, _ in
+            clampDurationToAvailableChoices()
+        }
+        .sheet(isPresented: $showVideoDurationPicker) {
+            videoDurationPickerSheet
         }
     }
 
@@ -274,7 +387,7 @@ struct PromptGenerationView: View {
                         Capsule(style: .continuous)
                             .fill(isSelected ? selectedSegmentFill : Color.clear)
                         HStack(spacing: 6) {
-                            Image(systemName: item == .video ? "video" : "camera")
+                            Image(systemName: item.systemImage)
                                 .font(.system(size: 13, weight: .semibold))
                             Text(item.title)
                                 .font(AppTheme.Typography.bodySecondary.weight(.medium))
@@ -668,21 +781,23 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
         .accessibilityValue(Text(videoAspect.rawValue))
     }
 
-    /// Ряд настроек видео: aspect (без референсов), длительность, audio.
+    /// Ряд настроек видео: горизонтальный скролл, если pill'ы не влезают в экран.
     private var videoSettingsSection: some View {
-        HStack(alignment: .center, spacing: 10) {
-            if !hasReferencePhotos {
-                videoAspectPill
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .center, spacing: 10) {
+                if !hasReferencePhotos {
+                    videoAspectPill
+                }
+                videoQualityPill
+                videoDurationPill
+                videoAudioPill
             }
-            videoDurationPill
-            videoAudioPill
-            Spacer(minLength: 0)
         }
     }
 
     private var videoDurationPill: some View {
         Button {
-            cycleVideoDuration()
+            showVideoDurationPicker = true
         } label: {
             Text("generation_duration_format".localized(with: Int(durationSeconds.rounded())))
                 .font(AppTheme.Typography.body.weight(.semibold))
@@ -695,18 +810,101 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
         .appPlainButtonStyle()
         .accessibilityLabel(Text("generation_duration_title".localized))
         .accessibilityValue(Text("generation_duration_format".localized(with: Int(durationSeconds.rounded()))))
+        .accessibilityHint(Text("generation_duration_picker_hint".localized))
     }
 
-    /// Следующее значение длительности по кругу после максимума (как барабан без отдельного шита).
-    private func cycleVideoDuration() {
-        let choices = Self.videoDurationChoices
-        let current = Int(durationSeconds.rounded())
-        guard let index = choices.firstIndex(of: current) else {
-            durationSeconds = Double(choices.first ?? 5)
-            return
+    /// Компактный sheet с сеткой 3…15 с (как у PixVerse), открывается по тапу на pill.
+    private var videoDurationPickerSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 8),
+                        count: Self.videoDurationGridColumns
+                    ),
+                    spacing: 8
+                ) {
+                    ForEach(videoDurationChoices, id: \.self) { seconds in
+                        videoDurationGridCell(seconds: seconds)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppTheme.Colors.background)
+            .navigationTitle("generation_duration_title".localized)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(AppTheme.Colors.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("done".localized) {
+                        showVideoDurationPicker = false
+                    }
+                    .foregroundColor(AppTheme.Colors.primary)
+                }
+            }
         }
-        let next = choices[(index + 1) % choices.count]
-        durationSeconds = Double(next)
+        .presentationBackground(AppTheme.Colors.background)
+        .presentationDetents([videoDurationPickerDetent])
+        .presentationDragIndicator(.visible)
+    }
+
+    /// Высота sheet под число рядов сетки (5 колонок).
+    private var videoDurationPickerDetent: PresentationDetent {
+        let rowCount = max(1, Int(ceil(Double(videoDurationChoices.count) / Double(Self.videoDurationGridColumns))))
+        let gridHeight = CGFloat(rowCount) * 36 + CGFloat(max(0, rowCount - 1)) * 8
+        let chrome: CGFloat = 72
+        return .height(gridHeight + chrome + 24)
+    }
+
+    private func videoDurationGridCell(seconds: Int) -> some View {
+        let isSelected = Int(durationSeconds.rounded()) == seconds
+        return Button {
+            durationSeconds = Double(seconds)
+            showVideoDurationPicker = false
+        } label: {
+            Text("generation_duration_short_format".localized(with: seconds))
+                .font(AppTheme.Typography.bodySecondary.weight(isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary.opacity(0.88))
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isSelected ? AppTheme.Colors.cardBackground : generationPanelSecondaryFill.opacity(0.65))
+                )
+        }
+        .buttonStyle(ThemedPlainButtonStyle())
+        .accessibilityLabel(Text("generation_duration_format".localized(with: seconds)))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private var videoQualityPill: some View {
+        Button {
+            cycleVideoQuality()
+        } label: {
+            Text(videoQuality.rawValue)
+                .font(AppTheme.Typography.body.weight(.semibold))
+                .foregroundColor(AppTheme.Colors.textPrimary)
+                .padding(.horizontal, 16)
+                .frame(minWidth: Self.videoQualityPillMinWidth)
+                .frame(height: generationControlPillHeight)
+                .background(AppTheme.Colors.cardBackground, in: Capsule(style: .continuous))
+        }
+        .appPlainButtonStyle()
+        .accessibilityLabel(Text("generation_video_quality_accessibility".localized))
+        .accessibilityValue(Text(videoQuality.rawValue))
+    }
+
+    private func cycleVideoQuality() {
+        videoQuality = videoQuality == .p540 ? .p720 : .p540
+    }
+
+    /// Подрезает длительность, если режим (напр. transition ≤8 с) не поддерживает текущее значение.
+    private func clampDurationToAvailableChoices() {
+        durationSeconds = normalizedDurationSeconds(durationSeconds)
     }
 
     private func cycleTwoImageVideoMode() {
@@ -753,27 +951,33 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
     }
 
     private var videoAudioPill: some View {
-        HStack(spacing: 10) {
-            Text("generation_audio_title".localized)
-                .font(AppTheme.Typography.body.weight(.semibold))
-                .foregroundColor(AppTheme.Colors.textPrimary)
+        Button {
+            audioEnabled.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Text("generation_audio_title".localized)
+                    .font(AppTheme.Typography.body.weight(.semibold))
+                    .foregroundColor(AppTheme.Colors.textPrimary)
 
-            Toggle("", isOn: $audioEnabled)
-                .labelsHidden()
-                .toggleStyle(
-                    RoundThumbSwitchToggleStyle(
-                        onTint: AppTheme.Colors.primary,
-                        offTrackTint: themeManager.currentTheme == .dark
-                            ? Color.white.opacity(0.22)
-                            : Color.black.opacity(0.1)
+                Toggle("", isOn: $audioEnabled)
+                    .labelsHidden()
+                    .toggleStyle(
+                        RoundThumbSwitchToggleStyle(
+                            onTint: AppTheme.Colors.primary,
+                            offTrackTint: themeManager.currentTheme == .dark
+                                ? Color.white.opacity(0.22)
+                                : Color.black.opacity(0.1)
+                        )
                     )
-                )
-                .fixedSize()
+                    .allowsHitTesting(false)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 14)
+            .frame(height: generationControlPillHeight)
+            .background(AppTheme.Colors.cardBackground, in: Capsule(style: .continuous))
+            .contentShape(Capsule(style: .continuous))
         }
-        .padding(.horizontal, 14)
-        .frame(height: generationControlPillHeight)
-        .background(AppTheme.Colors.cardBackground, in: Capsule(style: .continuous))
-        .accessibilityElement(children: .combine)
+        .appPlainButtonStyle()
         .accessibilityLabel(Text("generation_audio_title".localized))
         .accessibilityValue(Text(audioEnabled ? "generation_audio_on".localized : "generation_audio_off".localized))
     }
@@ -833,49 +1037,55 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
     }
 
     private func referenceImagePreview(image: UIImage, slot: Int) -> some View {
-        // Оверлей не должен жить в `HStack` со `Spacer`: внешний `HStack` даёт колонке maxWidth — иконка «обновить» уезжала за пределы 160×160.
-        Image(uiImage: image)
-            .resizable()
-            .scaledToFill()
-            .frame(width: photoTileHeight, height: photoTileHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                Button {
-                    clearReferenceSlot(slot)
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(AppTheme.Colors.onPrimaryText)
-                        .frame(width: 24, height: 24)
-                        .background(Color.black.opacity(0.55), in: Circle())
-                }
-                .appPlainButtonStyle()
-                .padding(8)
+        // scaledToFill у Image раздувает hit-test за пределы 160×160 (зависит от aspect ratio файла) —
+        // невидимая зона наезжает на чипы промпта сверху. Картинка не интерактивна; тапы только у кнопок в overlay.
+        let tileShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        return ZStack {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .allowsHitTesting(false)
+        }
+        .frame(width: photoTileHeight, height: photoTileHeight)
+        .clipped()
+        .clipShape(tileShape)
+        .overlay(alignment: .topLeading) {
+            Button {
+                clearReferenceSlot(slot)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(AppTheme.Colors.onPrimaryText)
+                    .frame(width: 24, height: 24)
+                    .background(Color.black.opacity(0.55), in: Circle())
             }
-            .overlay(alignment: .topTrailing) {
-                Group {
-                    if slot == 0 {
-                        PhotosPicker(selection: $pickerItemSlot0, matching: .images) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(AppTheme.Colors.onPrimaryText)
-                                .frame(width: 24, height: 24)
-                                .background(Color.black.opacity(0.55), in: Circle())
-                        }
-                        .disabled(isLoadingPhoto)
-                    } else {
-                        PhotosPicker(selection: $pickerItemSlot1, matching: .images) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(AppTheme.Colors.onPrimaryText)
-                                .frame(width: 24, height: 24)
-                                .background(Color.black.opacity(0.55), in: Circle())
-                        }
-                        .disabled(isLoadingPhoto)
+            .appPlainButtonStyle()
+            .padding(8)
+        }
+        .overlay(alignment: .topTrailing) {
+            Group {
+                if slot == 0 {
+                    PhotosPicker(selection: $pickerItemSlot0, matching: .images) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(AppTheme.Colors.onPrimaryText)
+                            .frame(width: 24, height: 24)
+                            .background(Color.black.opacity(0.55), in: Circle())
                     }
+                    .disabled(isLoadingPhoto)
+                } else {
+                    PhotosPicker(selection: $pickerItemSlot1, matching: .images) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(AppTheme.Colors.onPrimaryText)
+                            .frame(width: 24, height: 24)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                    }
+                    .disabled(isLoadingPhoto)
                 }
-                .padding(8)
             }
+            .padding(8)
+        }
     }
 
     private func clearReferenceSlot(_ slot: Int) {
@@ -930,10 +1140,19 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
             prompt: prompt,
             durationSeconds: normalizedDurationSeconds(durationSeconds),
             audioEnabled: audioEnabled,
+            videoQualityRaw: videoQuality.rawValue,
             photoAspectRaw: photoAspect.rawValue,
             videoAspectRaw: videoAspect.rawValue,
             referenceImageJPEGData: ref0,
-            referenceImage2JPEGData: ref1
+            referenceImage2JPEGData: ref1,
+            lipSyncInputModeRaw: lipSyncInputMode.rawValue,
+            lipSyncVideoLocalPath: lipSyncVideoLocalPath,
+            lipSyncVideoProviderJobId: lipSyncVideoProviderJobId,
+            lipSyncSelectedSpeakerId: lipSyncSelectedSpeakerId,
+            lipSyncOriginalAudioEnabled: lipSyncOriginalAudioEnabled,
+            lipSyncAudioLocalPath: lipSyncAudioLocalPath,
+            lipSyncAudioDisplayName: lipSyncAudioDisplayName,
+            lipSyncAudioDurationSeconds: lipSyncAudioDurationSeconds
         )
     }
 
@@ -951,16 +1170,25 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
         prompt = draft.prompt
         durationSeconds = normalizedDurationSeconds(draft.durationSeconds)
         audioEnabled = draft.audioEnabled
+        videoQuality = PromptVideoQuality(rawValue: draft.videoQualityRaw) ?? .p540
         photoAspect = PhotoAspectRatio(rawValue: draft.photoAspectRaw) ?? .nineSixteen
         videoAspect = PhotoAspectRatio(rawValue: draft.videoAspectRaw) ?? .nineSixteen
         pickerItemSlot0 = nil
         pickerItemSlot1 = nil
         referenceImageSlot0 = draft.referenceImageJPEGData.flatMap { UIImage(data: $0) }
         referenceImageSlot1 = draft.referenceImage2JPEGData.flatMap { UIImage(data: $0) }
+        lipSyncInputMode = LipSyncInputMode(rawValue: draft.lipSyncInputModeRaw ?? "") ?? .lines
+        lipSyncVideoLocalPath = draft.lipSyncVideoLocalPath
+        lipSyncVideoProviderJobId = draft.lipSyncVideoProviderJobId
+        lipSyncSelectedSpeakerId = draft.lipSyncSelectedSpeakerId
+        lipSyncOriginalAudioEnabled = draft.lipSyncOriginalAudioEnabled ?? false
+        lipSyncAudioLocalPath = draft.lipSyncAudioLocalPath
+        lipSyncAudioDisplayName = draft.lipSyncAudioDisplayName
+        lipSyncAudioDurationSeconds = draft.lipSyncAudioDurationSeconds
     }
 
     private func normalizedDurationSeconds(_ seconds: Double) -> Double {
-        let choices = Self.videoDurationChoices
+        let choices = videoDurationChoices
         let rounded = Int(seconds.rounded())
         if choices.contains(rounded) { return Double(rounded) }
         return Double(choices.min(by: { abs($0 - rounded) < abs($1 - rounded) }) ?? 5)
@@ -1013,7 +1241,8 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
                     aspectRatio: isTwoImageVideo && twoImageVideoMode == .fusion ? videoAspect.rawValue : (anyReference ? nil : videoAspect.rawValue),
                     inputImagePath: firstPath,
                     secondInputImagePath: secondPath,
-                    twoImageMode: isTwoImageVideo ? twoImageVideoMode : nil
+                    twoImageMode: isTwoImageVideo ? twoImageVideoMode : nil,
+                    quality: videoQuality
                 ),
                 cost: cost
             )
@@ -1024,6 +1253,18 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
                     aspectRatio: anyReference ? nil : photoAspect.rawValue,
                     inputImagePath: firstPath,
                     secondInputImagePath: secondPath
+                ),
+                cost: cost
+            )
+        case .lipSync:
+            generationJob.start(
+                request: .lipSync(
+                    linesPrompt: lipSyncInputMode == .lines ? lipSyncTrimmedPrompt : nil,
+                    speakerId: lipSyncInputMode == .lines ? lipSyncSelectedSpeakerId : nil,
+                    audioLocalPath: lipSyncInputMode == .uploadAudio ? lipSyncAudioLocalPath : nil,
+                    sourceVideoLocalPath: lipSyncVideoLocalPath,
+                    sourceProviderJobId: lipSyncVideoProviderJobId,
+                    originalAudioEnabled: lipSyncOriginalAudioEnabled
                 ),
                 cost: cost
             )
