@@ -713,6 +713,17 @@ final class GenerationJobService: ObservableObject {
         completedAt: Date?
     ) async {
         let meta = request.generationLogRouting
+        let enrichedRequestMetadata = await enrichGenerationLogMetadata(
+            requestMetadata,
+            clientJobId: clientJobId,
+            cost: cost,
+            status: status
+        )
+        let enrichedResponseMetadata: [String: Any]? = {
+            guard var responseMetadata else { return nil }
+            responseMetadata["client_context"] = enrichedRequestMetadata["client_context"]
+            return responseMetadata
+        }()
         // Дублируем вызов в консоль с префиксом `[Supabase]`, чтобы отличить «RPC не вызывался» от «вызвался, но отказал PostgREST».
         SupabaseService.logGenerationJournal(
             "pushGenerationLog enqueue client=\(clientJobId) job_status=\(status) gen_type=\(meta.generationType) preset=\(meta.effectPresetId.map(String.init) ?? "nil") provider_job=\(providerJobId ?? "nil") tokens=\(cost)"
@@ -728,13 +739,37 @@ final class GenerationJobService: ObservableObject {
             durationSeconds: meta.durationSeconds,
             audioEnabled: meta.audioEnabled,
             tokenCost: cost,
-            requestMetadata: requestMetadata,
-            responseMetadata: responseMetadata,
+            requestMetadata: enrichedRequestMetadata,
+            responseMetadata: enrichedResponseMetadata,
             resultURL: resultURL,
             errorMessage: errorMessage,
             startedAt: startedAt,
             completedAt: completedAt
         )
+    }
+
+    /// Контекст связывает строку `generation_logs` с Adapty/AppMetrica и локальным wallet.
+    /// Это нужно для расследования restore/family-sharing/reinstall abuse без косвенных догадок по install_id.
+    private static func enrichGenerationLogMetadata(
+        _ metadata: [String: Any]?,
+        clientJobId: Int,
+        cost: Int,
+        status: String
+    ) async -> [String: Any] {
+        var payload = metadata ?? (["platform": "ios"] as [String: Any])
+        let context = await MainActor.run { () -> [String: Any] in
+            var dict: [String: Any] = AppBuildMetadata.dictionary()
+            dict["client_generation_id"] = clientJobId
+            dict["generation_status"] = status
+            dict["token_cost"] = cost
+            dict["token_wallet_balance"] = TokenWalletService.shared.balance
+            dict["is_pro"] = AppState.shared.isProUser
+            dict["adapty_profile_id"] = AdaptyService.shared.profile?.profileId ?? NSNull()
+            dict["purchase_token_ledger"] = PurchaseTokenLedgerService.shared.diagnosticsSnapshot
+            return dict
+        }
+        payload["client_context"] = context
+        return payload
     }
 
     private func loadPersistedJobs() -> [LibraryGenerationJob] {

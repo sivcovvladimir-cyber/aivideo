@@ -1,11 +1,11 @@
 import Adapty
 import Foundation
 
-/// Журнал токенов, выданных за покупки/подписки: синхронизируется с профилем Adapty (purchase, renew, refund).
+/// Журнал токенов, выданных за покупки/подписки: checkout выдаёт токены, sync с Adapty только отзывает refund.
 /// `generationLimits` (сколько токенов даёт продукт) берутся из bundled `paywall_config.json` с overlay из Adapty remote config.
 ///
-/// Модель простая: каждое начисление (пакет или новый период подписки) — `+N` токенов; refund — `−N` тех же токенов
-/// (баланс не уходит ниже нуля). Один grant = одна транзакция/период; повторные sync дедуплицируются по `id`.
+/// Важно: restore / transfer / family sharing / inherited Adapty child profiles не должны восстанавливать токены
+/// на новом профиле или после reinstall. Поэтому `sync(with:)` не создаёт новые grants.
 @MainActor
 final class PurchaseTokenLedgerService {
     static let shared = PurchaseTokenLedgerService()
@@ -21,15 +21,17 @@ final class PurchaseTokenLedgerService {
     private let storageKey = "aivideo_purchase_token_grants"
     private var grants: [Grant] = []
     private let tokenWallet = TokenWalletService.shared
+    private let keychain = KeychainService.shared
 
     private init() {
         load()
     }
 
-    /// Синхронизирует начисления и отзывы с актуальным профилем Adapty (launch, foreground, после покупки).
+    /// Синхронизирует только отзывы с актуальным профилем Adapty.
+    /// Новые токены выдаются исключительно из checkout-пути (`grantFromCheckout`), а не при restore/profile update.
     func sync(with profile: AdaptyProfile) {
-        reconcileNonSubscriptions(profile)
-        reconcileSubscriptions(profile)
+        revokeRefundedNonSubscriptions(profile)
+        revokeRefundedSubscriptions(profile)
         persist()
     }
 
@@ -44,33 +46,20 @@ final class PurchaseTokenLedgerService {
 
     // MARK: - Reconcile
 
-    private func reconcileNonSubscriptions(_ profile: AdaptyProfile) {
+    private func revokeRefundedNonSubscriptions(_ profile: AdaptyProfile) {
         for (_, purchases) in profile.nonSubscriptions {
             for purchase in purchases {
-                let grantId = packGrantId(purchase)
                 if purchase.isRefund {
-                    revokeGrant(id: grantId)
-                } else {
-                    let tokens = tokenAmount(for: purchase.vendorProductId)
-                    if grantIfNeeded(id: grantId, productId: purchase.vendorProductId, tokens: tokens),
-                       isPackProductId(purchase.vendorProductId) {
-                        AppState.shared.notePackGenerationsGranted(tokens)
-                    }
+                    revokeGrant(id: packGrantId(purchase), fallbackProductId: purchase.vendorProductId)
                 }
             }
         }
     }
 
-    private func reconcileSubscriptions(_ profile: AdaptyProfile) {
+    private func revokeRefundedSubscriptions(_ profile: AdaptyProfile) {
         for (_, subscription) in profile.subscriptions {
-            let grantId = subscriptionGrantId(subscription)
-            // Refund подписки: снимаем токены только за refund-нутый период (ровно N).
             if subscription.isRefund {
-                revokeGrant(id: grantId)
-            } else if subscription.isActive {
-                // Новый период = новый id → одно начисление +N за период (повторные sync внутри периода дедуплицируются).
-                let tokens = tokenAmount(for: subscription.vendorProductId)
-                grantIfNeeded(id: grantId, productId: subscription.vendorProductId, tokens: tokens)
+                revokeGrant(id: subscriptionGrantId(subscription), fallbackProductId: subscription.vendorProductId)
             }
         }
     }
@@ -93,9 +82,11 @@ final class PurchaseTokenLedgerService {
         return true
     }
 
-    /// Отзыв grant при refund: снимаем выданное количество токенов (баланс не уходит ниже нуля).
-    private func revokeGrant(id: String) {
-        guard let index = grants.firstIndex(where: { $0.id == id && !$0.isRevoked }) else { return }
+    /// Отзыв grant при refund: сначала ищем точный id транзакции, затем любой активный grant этого продукта.
+    private func revokeGrant(id: String, fallbackProductId: String) {
+        let exactIndex = grants.firstIndex { $0.id == id && !$0.isRevoked }
+        let fallbackIndex = grants.firstIndex { $0.productId == fallbackProductId && !$0.isRevoked }
+        guard let index = exactIndex ?? fallbackIndex else { return }
         let grant = grants[index]
         grants[index].isRevoked = true
         tokenWallet.clawBack(grant.tokensGranted)
@@ -108,12 +99,25 @@ final class PurchaseTokenLedgerService {
         grants.contains { $0.id == id }
     }
 
-    private func tokenAmount(for productId: String) -> Int {
-        max(0, PaywallCacheManager.shared.generationLimit(for: productId) ?? 0)
-    }
-
     private func isPackProductId(_ productId: String) -> Bool {
         PaywallCacheManager.shared.paywallConfig?.purchasePlanIds?.contains(productId) == true
+    }
+
+    var totalGrantCount: Int {
+        grants.count
+    }
+
+    var activeGrantCount: Int {
+        grants.filter { !$0.isRevoked }.count
+    }
+
+    var diagnosticsSnapshot: [String: Any] {
+        [
+            "grants_count": totalGrantCount,
+            "active_grants_count": activeGrantCount,
+            "revoked_grants_count": grants.filter(\.isRevoked).count,
+            "active_product_ids": Array(Set(grants.filter { !$0.isRevoked }.map(\.productId))).sorted()
+        ]
     }
 
     /// Стабильный id пакета по store-транзакции (совпадает с checkout-id из StoreKit), иначе по purchaseId Adapty.
@@ -135,16 +139,21 @@ final class PurchaseTokenLedgerService {
     // MARK: - Persistence
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        let storedData = keychain.getPurchaseTokenGrantsData() ?? UserDefaults.standard.data(forKey: storageKey)
+        guard let data = storedData,
               let decoded = try? JSONDecoder().decode([Grant].self, from: data) else {
             grants = []
             return
         }
         grants = decoded
+        if keychain.getPurchaseTokenGrantsData() == nil {
+            persist()
+        }
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(grants) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        keychain.setPurchaseTokenGrantsData(data)
+        UserDefaults.standard.removeObject(forKey: storageKey)
     }
 }

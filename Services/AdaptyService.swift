@@ -79,6 +79,7 @@ class AdaptyService: ObservableObject {
     private var cachedAdaptyPaywall: AdaptyPaywall?
     private var cachedAdaptyPaywallAt: Date?
     private var pendingPaywallTask: Task<AdaptyPaywall, Error>?
+    private var lastSyncedCustomAttributesSignature: String?
     private var latestPaywallFetchId: UUID?
     private let adaptyPaywallCacheTTL: TimeInterval = 300
     private var currentPlacementTier: PaywallPlacementTier = .standard
@@ -158,6 +159,7 @@ class AdaptyService: ObservableObject {
         self.profile = profile
         updateProStatus(from: profile)
         PurchaseTokenLedgerService.shared.sync(with: profile)
+        syncAdaptyCustomAttributesIfNeeded(profile: profile)
         syncAppMetricaUserProfile()
     }
 
@@ -165,6 +167,35 @@ class AdaptyService: ObservableObject {
     private func syncAppMetricaUserProfile() {
         Task { @MainActor in
             AppState.shared.refreshAnalyticsUserProfile()
+        }
+    }
+
+    /// Дублирует ключевые идентификаторы в Adapty profile attributes, чтобы в кабинете видеть связь с generation logs.
+    private func syncAdaptyCustomAttributesIfNeeded(profile: AdaptyProfile) {
+        let attributes: [String: String] = [
+            "app_install_id": UserInstallIDService.shared.installId,
+            "wallet_balance": String(TokenWalletService.shared.balance),
+            "ledger_active": String(PurchaseTokenLedgerService.shared.activeGrantCount),
+            "ledger_total": String(PurchaseTokenLedgerService.shared.totalGrantCount)
+        ]
+        let signature = attributes
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "|")
+        guard signature != lastSyncedCustomAttributesSignature else { return }
+        lastSyncedCustomAttributesSignature = signature
+
+        Task {
+            do {
+                var builder = AdaptyProfileParameters.Builder()
+                for (key, value) in attributes {
+                    builder = try builder.with(customAttribute: String(value.prefix(50)), forKey: key)
+                }
+                try await Adapty.updateProfile(params: builder.build())
+                print("[paywall] Adapty custom attributes synced profile=\(profile.profileId)")
+            } catch {
+                print("[paywall] Adapty custom attributes sync failed: \(error.localizedDescription)")
+            }
         }
     }
 

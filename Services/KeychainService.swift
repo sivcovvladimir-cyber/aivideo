@@ -10,6 +10,7 @@ final class KeychainService {
     private let tokenWalletInitializedKey = "aivideo_token_wallet_initialized"
     private let tokenBalanceKey = "aivideo_token_balance"
     private let tokenLastRefreshDayKey = "aivideo_token_last_refresh_day"
+    private let purchaseTokenGrantsKey = "aivideo_purchase_token_grants"
 
     // MARK: - Public API
 
@@ -63,6 +64,18 @@ final class KeychainService {
         setTokenWalletInitialized(false)
         setTokenBalance(0)
         setTokenLastRefreshDay("")
+    }
+
+    // MARK: - Purchase token grants ledger
+
+    /// Ledger грантов держим в Keychain: UserDefaults сбрасывается при reinstall и позволяет повторно начислять те же покупки.
+    func getPurchaseTokenGrantsData() -> Data? {
+        guard let encoded = get(key: purchaseTokenGrantsKey) else { return nil }
+        return Data(base64Encoded: encoded)
+    }
+
+    func setPurchaseTokenGrantsData(_ data: Data) {
+        set(key: purchaseTokenGrantsKey, value: data.base64EncodedString())
     }
 
     // MARK: - Keychain primitives

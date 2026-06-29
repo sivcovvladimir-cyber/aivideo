@@ -1115,25 +1115,14 @@ struct PaywallView: View {
         dismissPaywallPresentation()
     }
 
-    /// Начисляет токены после покупки.
-    /// StoreKit-путь (есть `transactionId`) — начисляем сразу по транзакции; последующий sync профиля дедуплицируется по тому же id.
-    /// Adapty-путь — профиль уже обновлён покупкой, начисляем через единый reconcile.
+    /// Начисляет токены только из текущего checkout.
+    /// Restore / profile sync / inherited Adapty-профили не восстанавливают токены на новом устройстве или после reinstall.
     private func applyPurchaseTokenGrant(for productId: String, tokens: Int, transactionId: String?) {
-        if transactionId != nil {
-            PurchaseTokenLedgerService.shared.grantFromCheckout(
-                productId: productId,
-                tokens: tokens,
-                transactionId: transactionId
-            )
-        } else if let profile = AdaptyService.shared.profile {
-            PurchaseTokenLedgerService.shared.sync(with: profile)
-        } else {
-            PurchaseTokenLedgerService.shared.grantFromCheckout(
-                productId: productId,
-                tokens: tokens,
-                transactionId: nil
-            )
-        }
+        PurchaseTokenLedgerService.shared.grantFromCheckout(
+            productId: productId,
+            tokens: tokens,
+            transactionId: transactionId
+        )
     }
     
     private func handleRestore() {
