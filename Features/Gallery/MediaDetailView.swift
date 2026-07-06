@@ -206,7 +206,6 @@ struct MediaDetailView: View {
                     shouldPlay: isActivePage,
                     preloadsWhenPaused: dist > 0 && dist <= 2,
                     isMuted: false,
-                    playbackVolumeOverride: 0.07,
                     usesDiskCache: false,
                     expandsVideoToIgnoreSafeArea: true
                 )

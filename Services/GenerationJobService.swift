@@ -339,11 +339,14 @@ final class GenerationJobService: ObservableObject {
         }
     }
 
+    /// Восстановленные после перезапуска джобы идут **фоново**, независимо от `isRunning`/оверлея текущего экрана:
+    /// раньше общий `isRunning = true` мог зависнуть навсегда, если резюмированный poll обрывался повторным
+    /// сворачиванием/убийством процесса — тогда кнопка Generate была заблокирована для ВСЕХ типов генерации
+    /// (включая lip sync) без единой строки в логах, потому что `start()` выходил до вызова API.
     private func resumePersistedProviderJobs() {
         let resumableJobs = recentJobs.filter { !$0.state.isFailed && $0.providerJob != nil }
         guard !resumableJobs.isEmpty else { return }
 
-        isRunning = true
         for job in resumableJobs {
             guard let providerJob = job.providerJob else { continue }
             Task { [weak self] in
@@ -356,7 +359,6 @@ final class GenerationJobService: ObservableObject {
     private func resumePolling(job: LibraryGenerationJob, providerJob: PixVerseCreatedJob) async {
         let requestMetadata = job.providerRequestLog?.supabaseRequestMetadata()
         do {
-            phase = .processing
             updateJob(job.id, state: .processing)
             await Self.pushGenerationLog(
                 clientJobId: job.id,
@@ -371,7 +373,6 @@ final class GenerationJobService: ObservableObject {
                 completedAt: nil
             )
             let result = try await api.pollUntilCompleted(job: providerJob)
-            phase = .saving
             let media = try await downloadAndSave(
                 result: result,
                 prompt: job.request.promptForLibrary,
@@ -391,7 +392,7 @@ final class GenerationJobService: ObservableObject {
             )
             AppState.shared.addGeneratedMedia(media)
             removeJob(job.id)
-            finishSuccess(media: media)
+            finishBackgroundSuccess(media: media)
         } catch {
             billing.refund(cost: job.cost)
             var diagnostics = GenerationFailureDiagnostics()
@@ -406,7 +407,7 @@ final class GenerationJobService: ObservableObject {
                 diagnostics: diagnostics
             )
             removeJob(job.id)
-            finishFailure(error)
+            finishBackgroundFailure(error)
         }
     }
 
@@ -630,6 +631,20 @@ final class GenerationJobService: ObservableObject {
         isOverlayVisible = false
         phase = .idle
         activeTask = nil
+        NotificationManager.shared.showError(
+            "generation_failed_refunded".localized(with: error.localizedDescription),
+            customDuration: 5,
+            sizing: .fitContent
+        )
+    }
+
+    /// Резюмированная (фоновая) джоба не трогает `isRunning`/`isOverlayVisible`/`phase` — это состояние текущего
+    /// экрана генерации; иначе завершение старой джобы могло сбросить оверлей активной новой генерации.
+    private func finishBackgroundSuccess(media: GeneratedMedia) {
+        NotificationManager.shared.showSuccess("generation_completed_success".localized)
+    }
+
+    private func finishBackgroundFailure(_ error: Error) {
         NotificationManager.shared.showError(
             "generation_failed_refunded".localized(with: error.localizedDescription),
             customDuration: 5,

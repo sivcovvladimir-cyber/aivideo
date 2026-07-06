@@ -1257,10 +1257,13 @@ private struct PromptActionCapsuleAccessibilityValue: ViewModifier {
                 cost: cost
             )
         case .lipSync:
+            // useapi не поддерживает настоящий auto-выбор голоса для TTS: без `speaker_id` запрос с `prompt`
+            // падает ошибкой. «Auto» в UI подставляет первый голос из каталога вместо пустого speaker_id.
+            let resolvedSpeakerId = lipSyncSelectedSpeakerId ?? LipSyncVoiceStore.shared.defaultSpeakerId
             generationJob.start(
                 request: .lipSync(
                     linesPrompt: lipSyncInputMode == .lines ? lipSyncTrimmedPrompt : nil,
-                    speakerId: lipSyncInputMode == .lines ? lipSyncSelectedSpeakerId : nil,
+                    speakerId: lipSyncInputMode == .lines ? resolvedSpeakerId : nil,
                     audioLocalPath: lipSyncInputMode == .uploadAudio ? lipSyncAudioLocalPath : nil,
                     sourceVideoLocalPath: lipSyncVideoLocalPath,
                     sourceProviderJobId: lipSyncVideoProviderJobId,

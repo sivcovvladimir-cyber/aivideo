@@ -66,10 +66,9 @@ struct LipSyncGenerationSection: View {
     private let voicePreviewControlSize: CGFloat = 32
     private let lipSyncPromptMinHeight: CGFloat = 132
 
-    @State private var voices: [PixVerseVoice] = []
-    @State private var isLoadingVoices = false
-    @State private var voicesLoadFailed = false
-    @State private var voicesDidLoadOnce = false
+    /// Общий на всё приложение, а не локальный `@State`: секция пересоздаётся при каждом переключении
+    /// вкладок Video/Photo/Lip sync, и локальное состояние загрузки голосов ловило гонку (см. `LipSyncVoiceStore`).
+    @ObservedObject private var voiceStore = LipSyncVoiceStore.shared
     @State private var showVoicePanel = false
     @State private var showAudioImporter = false
     @State private var videoPickerItem: PhotosPickerItem?
@@ -90,7 +89,7 @@ struct LipSyncGenerationSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
-            loadVoicesIfNeeded()
+            voiceStore.loadIfNeeded()
         }
         .onDisappear {
             voicePreview.stop()
@@ -192,12 +191,12 @@ struct LipSyncGenerationSection: View {
     }
 
     private var shouldShowVoicesLoading: Bool {
-        isLoadingVoices || (!voicesDidLoadOnce && !voicesLoadFailed)
+        voiceStore.isLoading || (!voiceStore.didLoadOnce && !voiceStore.loadFailed)
     }
 
     private var voicePill: some View {
         Button {
-            loadVoicesIfNeeded()
+            voiceStore.loadIfNeeded()
             showVoicePanel = true
         } label: {
             HStack(spacing: 8) {
@@ -399,14 +398,14 @@ struct LipSyncGenerationSection: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 12)
-                    } else if voicesLoadFailed {
+                    } else if voiceStore.loadFailed {
                         VStack(spacing: 12) {
                             Text("generation_lipsync_voices_failed".localized)
                                 .font(AppTheme.Typography.bodySecondary)
                                 .foregroundColor(AppTheme.Colors.textSecondary)
                                 .multilineTextAlignment(.center)
                             Button("generation_lipsync_voices_retry".localized) {
-                                reloadVoices()
+                                voiceStore.reload()
                             }
                             .font(AppTheme.Typography.body.weight(.semibold))
                             .foregroundColor(AppTheme.Colors.primary)
@@ -423,7 +422,7 @@ struct LipSyncGenerationSection: View {
                             )
                         }
 
-                        if voicesDidLoadOnce, filteredPresetVoices.isEmpty {
+                        if voiceStore.didLoadOnce, filteredPresetVoices.isEmpty {
                             Text("generation_lipsync_voices_empty".localized)
                                 .font(AppTheme.Typography.bodySecondary)
                                 .foregroundColor(AppTheme.Colors.textSecondary)
@@ -452,8 +451,8 @@ struct LipSyncGenerationSection: View {
         }
         .background(AppTheme.Colors.background.ignoresSafeArea())
         .onAppear {
-            if !voicesDidLoadOnce {
-                loadVoicesIfNeeded(force: true)
+            if !voiceStore.didLoadOnce {
+                voiceStore.loadIfNeeded(force: true)
             }
         }
         .onDisappear {
@@ -463,10 +462,7 @@ struct LipSyncGenerationSection: View {
 
     /// Пресеты из API без дублей «Auto» — отдельная строка уже есть выше.
     private var filteredPresetVoices: [PixVerseVoice] {
-        voices.filter { voice in
-            let name = voice.displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return name != "auto"
-        }
+        voiceStore.presetVoices
     }
 
     private func voicePickerRow(title: String, subtitle: String?, speakerId: String?, previewURL: URL?) -> some View {
@@ -533,46 +529,15 @@ struct LipSyncGenerationSection: View {
         .accessibilityLabel(Text(isPlaying ? "Stop preview" : "Play preview"))
     }
 
-    private func reloadVoices() {
-        voices = []
-        voicesLoadFailed = false
-        voicesDidLoadOnce = false
-        isLoadingVoices = false
-        loadVoicesIfNeeded(force: true)
-    }
-
     private var selectedVoiceTitle: String {
         if selectedSpeakerId == nil {
             return "generation_lipsync_voice_auto".localized
         }
         if let id = selectedSpeakerId,
-           let voice = voices.first(where: { $0.speakerId == id }) {
+           let voice = voiceStore.voices.first(where: { $0.speakerId == id }) {
             return voice.displayName
         }
         return "generation_lipsync_voice_auto".localized
-    }
-
-    private func loadVoicesIfNeeded(force: Bool = false) {
-        if isLoadingVoices { return }
-        if voicesDidLoadOnce && !force { return }
-        isLoadingVoices = true
-        voicesLoadFailed = false
-        Task {
-            do {
-                let fetched = try await PixVerseAPIService.shared.fetchLipSyncVoices()
-                await MainActor.run {
-                    voices = fetched
-                    isLoadingVoices = false
-                    voicesDidLoadOnce = true
-                }
-            } catch {
-                await MainActor.run {
-                    voicesLoadFailed = true
-                    isLoadingVoices = false
-                    voicesDidLoadOnce = true
-                }
-            }
-        }
     }
 
     private func clearVideo() {
